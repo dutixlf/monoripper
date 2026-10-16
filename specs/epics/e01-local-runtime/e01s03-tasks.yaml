@@ -1,22 +1,22 @@
 story_id: e01s03
 title: Container lifecycle
 spec: e01s03-container.md
-status: failing
+status: passing
 bcps: 3
 tasks:
   - id: 1
-    description: Build a pinned non-root image, private control network, and checks for absence of Docker socket/privileged mode.
+    description: Build a pinned glibc non-root image. Verify exec-only authenticated control, private listeners, secret mounts, read-only root and bounded resources without privileged mode or engine sockets.
     verify: test -f tests/container/boundaries.sh && bash tests/container/boundaries.sh
     risk: P0
-    status: failing
+    status: passing
     allure:
       severity: critical
       categories: [container, Security Review]
   - id: 2
-    description: Verify gRPC scaling, persistent volume recovery, and bounded SIGTERM without orphan workers.
+    description: Verify real gRPC scaling through exec, worker recovery, persistent volume recreation and bounded SIGTERM with response drain and no orphan workers.
     verify: test -f tests/container/lifecycle.sh && bash tests/container/lifecycle.sh
     risk: P0
-    status: failing
+    status: passing
     allure:
       severity: critical
       categories: [container, lifecycle]

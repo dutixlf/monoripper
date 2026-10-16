@@ -7,16 +7,17 @@ Prove that container operation preserves Monoripper control over child processes
 As a small-project operator, I run one container and manage its contexts without a Docker socket.
 
 ## 3. Status and complexity
-Draft, failing ledger. 3 BCP, P0 risk from process lifecycle and network boundaries.
+Implemented, automated checks passing, user UAT pending. 3 BCP, P0 risk from process lifecycle and network boundaries.
 
 ## 4. Dependencies
-e01s02, an available container engine for tests, and a verified Bun base image/digest.
+e01s02, rootless Podman for tests, and a pinned Linux amd64 Debian/glibc Bun image.
+User approved [exec-based administration](../../adr/0001-container-exec-control.md) instead of exposed private-network gRPC.
 
 ## 5. Inputs
 Image, source fixture/initial application before e02, configuration, credentials, persistent volume, and resource limits.
 
 ## 6. Outputs
-A running non-root runtime, private control endpoint, and reproducible stop/restart.
+A running non-root runtime, loopback-only control through engine exec, and reproducible stop/restart.
 
 ## 7. ADDED requirements
 - Contexts start and scale inside the container.
@@ -28,8 +29,9 @@ A running non-root runtime, private control endpoint, and reproducible stop/rest
 CPU/RAM limits apply to the entire container. Do not promise separate memory or HA for contexts.
 
 ## 9. Startup interface
-Proposed `serve --config`. Before e02, the fixture is embedded in the test image. The runtime registry is not implemented yet.
-Production bootstrap releases are finalized in e02.
+Use `serve --config` as the container entrypoint. Before e02, the example is embedded in the image.
+Run status/scale/operation through `podman exec`, with a helper that reads the mounted secret inside the container.
+The registry and production bootstrap releases remain e02 work.
 
 ## 10. Storage
 One controller uses one state volume with correct uid/gid and data directory permissions.
@@ -44,10 +46,11 @@ Status/logs expose inaccessible volumes, occupied ports, insufficient grace peri
 
 ## 13. Security
 Non-root operation, minimal published ports, and no credentials in image layers or output.
-Remote control is available only on the private test network with authorization.
+Control binds only to container loopback and requires a credential. Do not publish its port.
+Engine exec is an operator privilege, not remote API access. Worker code is trusted, not isolated from shared mounts.
 
 ## 14. Compatibility
-The first target is Linux. Verify control connectivity between the container and test runner.
+The first target is Linux amd64 with glibc and rootless Podman. Verify authenticated CLI control through exec.
 EXPOSE is not a firewall rule or port publication.
 
 ## 15. Implementation steps
@@ -58,7 +61,7 @@ EXPOSE is not a firewall rule or port publication.
 Two contexts, persistent state, a slow request, limited memory, and a bounded stop timeout.
 
 ## 17. Acceptance criteria
-- gRPC can start billing and change user replicas inside the container.
+- The real gRPC CLI through exec starts billing and changes user replicas inside the container.
 - Run as non-root without Docker socket or privileged mode.
 - Worker ports are inaccessible outside the container. Control requires a credential.
 - Recreation with the same volume restores desired state.
@@ -69,8 +72,10 @@ Start the example, scale through the CLI, stop the container during a short requ
 Demonstrate expected limitations when the entire container is lost.
 
 ## 19. Out of scope
-Zero-downtime image replacement, Kubernetes manifests, Docker-in-Docker, and separate context cgroups.
+Remote network control/TLS, zero-downtime image replacement, Kubernetes manifests, Docker-in-Docker, and separate context cgroups.
 
 ## 20. Gate and handoff
-After the e01 gate, detail e02. Do not publish to npm/registry automatically.
+Both task entrypoints and the startup regression pass on real rootless Podman.
+Evidence: [e01s03-verify.yaml](../../verifications/e01s03-verify.yaml).
+User UAT remains pending. After the e01 gate, detail e02. Do not publish to npm/registry automatically.
 Structure check: `python3 scripts/check-specs.py`.

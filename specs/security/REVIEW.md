@@ -51,6 +51,29 @@ Eleven regression scenarios pass, including divergence, verification failure, un
 and atomic rejection. No new runtime dependencies, secrets or application network endpoints.
 Evidence: [landing workflow](../verifications/landing-workflow.md). Self-review only.
 
+## e01s03 review — 2026-10-16
+
+Scope: container feature diff from b5bb5a3, including BUG-003 startup cancellation.
+
+- Checked CLI signal input through startupSignal, pool cancellation, worker cleanup and writer release.
+  Native tests cover pre-abort, blocked startup, cleanup failure and successful CLI shutdown.
+  The real PID-1 regression first exited 137 and now exits 0 with resource cleanup.
+- The image pins the Bun amd64 Debian manifest, uses frozen dependencies and a non-root final user.
+  Its allowlisted build context excludes user data, Git metadata and secrets. Final runtime has no source/dev PostgreSQL.
+- Mounted credentials are not build args, container env metadata or CLI arguments. Control stays on loopback.
+  Exec is operator access. Shared mounts remain readable to trusted application code, not a hostile-code sandbox.
+- Rootless tests verify kernel capability masks, NoNewPrivs, read-only root and actual cgroup limits.
+  No host PID/network, engine socket, privileged mode or broad prune is used.
+- Test policy does not overwrite configured operator policy. Its fallback rejects other remote repositories
+  and permits the digest-pinned unsigned Bun source plus local build outputs on otherwise unconfigured engines.
+- Commands use argument arrays and unique test-owned resource names. Cleanup is checked through command exit status.
+- No new npm dependencies, plaintext remote control, registry endpoint or production deployment.
+- All 49 native tests, package smoke, 11 landing regressions, real rootless suites and real private-backend/PostgreSQL passed.
+
+No unresolved concrete HIGH/CRITICAL findings were identified in this self-review.
+Independent review, user UAT, signed-image provenance, load testing and production hardening are not claimed.
+Evidence: [e01s03 verification](../verifications/e01s03-verify.yaml).
+
 ## Verdict
 
 Self-review found no unresolved concrete HIGH/CRITICAL findings.

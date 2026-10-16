@@ -39,6 +39,8 @@ export interface ServeOptions extends Omit<RuntimeConfig, 'app'> {
   app: AppDefinition
   /** Entries and tsconfig resolve against this directory, not the process cwd. */
   root?: string
+  /** Cancel startup only. After serve resolves, use Runtime.stop(). Not a config-file option. */
+  startupSignal?: AbortSignal
   /** Operator-only diagnostic sink. Messages may contain sensitive application data; redact before logging. */
   onDiagnostic?: (event: { context: string; code: string; message: string }) => void
 }

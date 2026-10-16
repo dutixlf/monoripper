@@ -1,0 +1,82 @@
+type: verification
+context: e01s03 rootless container lifecycle with user-approved exec control
+story_id: e01s03
+status: automated_passed_awaiting_user_uat
+session_date: '2026-10-16'
+branch: feat/container-lifecycle
+baseline: b5bb5a3
+environment:
+  host: NixOS Linux amd64
+  engine: rootless Podman 5.8.7
+  cgroups: v2 systemd with canonical user D-Bus
+  bun: 1.3.13
+  base: docker.io/oven/bun:1.3.13-debian
+  base_manifest: sha256:550178b0d9fefc73c8758eb1ee9bb7eff90747ba1008d80a5bb76695b3fd9265
+  identity: container UID/GID 1000 with rootless keep-id mapping
+  limits: 512 MiB memory, 1 CPU, 128 PIDs shared by all replicas
+checks:
+  frozen_install: passed_no_lockfile_changes
+  typecheck: passed
+  runtime:
+    command: bun test --coverage tests
+    result: passed
+    tests: 49
+    failed: 0
+    expect_calls: 208
+    instrumented_lines_percent: 98.29
+    evidence: e01s03-tests.log
+    note: Coverage is parent-process instrumentation, not all spawned worker/CLI/container code. Expected forced-drain connection error is not a failed test.
+  package:
+    command: bun run test:package
+    result: passed
+    evidence: e01s03-package.log
+  landing:
+    command: bun run test:landing
+    result: 11_pass_0_fail
+    evidence: e01s03-landing.log
+  container:
+    command: bun run test:container
+    result: passed
+    evidence: e01s03-containers.log
+    boundaries:
+      - Built image defaults to non-root and contains built distribution, not source checkout or embedded PostgreSQL.
+      - Kernel effective/bounding capabilities are zero, NoNewPrivs is set, and cgroup limits are actual enforced values.
+      - Root is read-only, state is writable, mounted secret mode is 0400, and no engine socket or host PID/network mode is used.
+      - Only HTTP is published on host loopback. Worker and authenticated gRPC sockets listen only on container loopback.
+      - Unauthorized mutation fails without revision change. Generated credential is absent from image/container metadata, logs and state.
+      - Missing secret, read-only state and control-port collision fail startup without false readiness and clean acquired resources.
+    lifecycle:
+      - Real exec gRPC enables billing, scales user from 1 to 3 and proves round-robin across three worker PIDs.
+      - Worker SIGKILL recovers the desired count.
+      - SIGTERM preserves a complete active response, closes contexts then actual file resources, exits 0 within five seconds and leaves no host worker PIDs.
+      - Recreation with the same volume restores desired counts and durable operation IDs instead of initial defaults.
+      - Hard kill exits 137 without orphan workers. Recreation preserves disabled state and idempotent retry identity.
+      - SIGTERM during deterministically blocked PID-1 startup cancels workers, closes resources and exits 0 without readiness.
+    cleanup: Test-owned containers, volumes, secrets and image tags removed. Normal base/build caches retained. No global prune.
+  private-backend:
+    command: bun run test:private-backend:postgres <backend> <packages>
+    result: passed
+    evidence: e01s03-private-backend.log
+    backend_commit: <redacted>
+    scope: Real PostgreSQL 18, 12 migrations, full backend CRUD, gRPC scale/recovery/restore/disable and cleanup outside containers.
+regressions:
+  bug: BUG-003
+  red: PID-1 SIGTERM during blocked worker startup was ignored until engine SIGKILL, exit 137. Cancellation also concealed cleanup failure.
+  green: Native startup cancellation/CLI tests and built-image PID-1 test pass. Cleanup failures remain errors and the writer lock is released.
+  api_change: Optional programmatic startupSignal in ServeOptions. Configuration files do not accept this option. Use Runtime.stop after startup.
+policy:
+  control_scope: Loopback through operator exec, per ADR 0001. No remote plaintext or TLS API added.
+  image_policy: Existing operator policy is respected. Only otherwise unconfigured test engines use the scoped oven/bun/local-storage fallback.
+  host_changes: Transient Nix shell only. No NixOS, global signature-policy or Git-guard configuration changes.
+  source_language: English documentation and comments.
+  security_review: ../security/REVIEW.md
+  independent_review: not_run
+manual_uat: pending_user
+ci: not_configured
+published_or_deployed: false
+limitations:
+  - Verified Linux amd64, Debian/glibc and rootless Podman only. Other engines/platforms and load/production matrices are unverified.
+  - Application code is trusted and can read shared mounts. This is not a hostile-code sandbox.
+  - Remote TLS/RBAC, release registry, rollout, multinode, autoscale and HA remain future stages.
+  - Arbitrary blocking config module code and stalled kernel I/O are not safely cancellable. The engine provides the final external stop bound.
+  - The example is embedded in the image until e02. This is not the final application release delivery mechanism.

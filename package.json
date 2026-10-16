@@ -26,7 +26,8 @@
     "test:private-backend": "bun scripts/test-private-backend.ts",
     "test:private-backend:postgres": "bun scripts/test-private-backend-postgres.ts",
     "test:package": "bun scripts/test-package.ts",
-    "test:landing": "bash scripts/test-land-branch.sh"
+    "test:landing": "bash scripts/test-land-branch.sh",
+    "test:container": "bash tests/container/boundaries.sh && bash tests/container/lifecycle.sh"
   },
   "dependencies": {
     "@grpc/grpc-js": "1.14.6",

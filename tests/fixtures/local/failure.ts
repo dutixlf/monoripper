@@ -12,6 +12,6 @@ export default defineContext({
   },
   async stop() {
     await appendFile(process.env.LIFECYCLE_FILE!, 'context:stop\n')
-    if (process.env.FAILURE_MODE === 'stop') throw new Error('cleanup failed')
+    if (process.env.FAILURE_MODE === 'stop' || process.env.FAILURE_STOP === '1') throw new Error('cleanup failed')
   },
 })

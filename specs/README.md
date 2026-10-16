@@ -1,6 +1,6 @@
 # Monoripper — plan and design
 
-Status: **local contexts and control e01s01/e01s02 implemented, automated checks passed, awaiting UAT**.
+Status: **e01s01/e01s02 local control and e01s03 container lifecycle implemented, automated checks passed, awaiting UAT**.
 Current run instructions and implemented API: [project README](../README.md). Other documents also describe future stages.
 Purpose: record agreements and provide an implementation baseline without repeated design work.
 
@@ -53,9 +53,10 @@ Application/release descriptions, local node settings, and persistent desired st
 Explicit TS/JS config is implemented: defaults → config → explicit CLI overrides, without shared mutable configuration.
 Controller/local-policy interaction follows in later stages.
 
-Current step: UAT of the control example. Next is e01s03 container lifecycle. Control is local-only, not production TLS/RBAC.
+Current step: UAT of the local and [container example](../examples/container/README.md), then detailed e02 registry/release work.
+Container control uses authenticated engine exec per [ADR 0001](adr/0001-container-exec-control.md), not remote TLS/RBAC.
 The full external backend `src/app.ts` and a separate tags context passed real migrations/CRUD on embedded PostgreSQL 18.
 No publication or registry deployment occurred. OAuth and other domain flows are not verified.
 
 Document structure check: `python3 scripts/check-specs.py`.
-Results: [local control](verifications/e01s02-verify.yaml), [PostgreSQL follow-up](verifications/embedded-postgres-verify.yaml), [initial prototype](verifications/e01s01-verify.yaml), [historical plan review](verifications/planning.md).
+Results: [container lifecycle](verifications/e01s03-verify.yaml), [local control](verifications/e01s02-verify.yaml), [PostgreSQL follow-up](verifications/embedded-postgres-verify.yaml), [initial prototype](verifications/e01s01-verify.yaml), [historical plan review](verifications/planning.md).

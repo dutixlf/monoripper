@@ -4,7 +4,7 @@ development_status:
   e01: in_progress
   e01s01: awaiting_uat
   e01s02: awaiting_uat
-  e01s03: failing
+  e01s03: awaiting_uat
   e02: planned
   e02s01: planned
   e02s02: planned
@@ -13,4 +13,4 @@ development_status:
   e03s01: planned
   e03s02: planned
   e03s03: planned
-note: e01s01/e01s02 automated checks pass and user UAT is pending. e01s03 and other planned tasks are not implemented yet.
+note: e01s01/e01s02/e01s03 automated checks pass. User UAT remains pending. e02/e03 are not implemented yet.

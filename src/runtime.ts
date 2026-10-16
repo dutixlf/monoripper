@@ -28,9 +28,12 @@ function resolveApp(app: AppDefinition, root: string): AppDefinition {
   }
 }
 export async function serve(options: ServeOptions): Promise<Runtime> {
-  assertKeys(options, ['app', 'root', 'initial', 'http', 'lifecycle', 'env', 'onDiagnostic', 'control', 'dataDir', 'environment', 'recovery'], 'serve')
+  assertKeys(options, ['app', 'root', 'initial', 'http', 'lifecycle', 'env', 'onDiagnostic', 'control', 'dataDir', 'environment', 'recovery', 'startupSignal'], 'serve')
   validateRuntimeConfig(options)
   validateApp(options.app)
+  if (options.startupSignal !== undefined && !(options.startupSignal instanceof AbortSignal)) throw new MonoripperError('INVALID_CONFIG', 'startupSignal must be an AbortSignal')
+  const assertStarting = () => { if (options.startupSignal?.aborted) throw new MonoripperError('SHUTTING_DOWN', 'Runtime startup cancelled') }
+  assertStarting()
   if (options.root !== undefined && typeof options.root !== 'string') throw new MonoripperError('INVALID_CONFIG', 'root must be a path')
   if (options.onDiagnostic !== undefined && typeof options.onDiagnostic !== 'function') throw new MonoripperError('INVALID_CONFIG', 'onDiagnostic must be a function')
   options = { ...options, app: structuredClone(options.app), initial: structuredClone(options.initial),
@@ -55,8 +58,12 @@ export async function serve(options: ServeOptions): Promise<Runtime> {
   let stopPromise: Promise<void> | undefined
   const counters = new Map<string, number>()
   const requestTimeout = options.lifecycle?.requestTimeoutMs ?? 30_000
+  const cancelStartup = () => controller.beginClose()
+  options.startupSignal?.addEventListener('abort', cancelStartup, { once: true })
   try {
+    assertStarting()
     await controller.initialize()
+    assertStarting()
     server = Bun.serve({
       hostname: options.http?.host ?? '127.0.0.1', port: options.http?.port ?? 3000,
       maxRequestBodySize: options.http?.maxRequestBodyBytes ?? 16 * 1024 * 1024, idleTimeout: 30,
@@ -96,6 +103,7 @@ export async function serve(options: ServeOptions): Promise<Runtime> {
       const { startControlServer } = await import('./grpc-server')
       control = await startControlServer(controller, options.control, token!)
     }
+    assertStarting()
     const gateway = server
     return {
       url: new URL(gateway.url), ...(control ? { controlAddress: control.address } : {}),
@@ -123,7 +131,10 @@ export async function serve(options: ServeOptions): Promise<Runtime> {
   } catch (error) {
     control?.close()
     await server?.stop(true)
-    try { await controller.close() } catch { /* Preserve startup failure; close always releases its writer lock. */ }
+    try { await controller.close() } catch (cleanupError) {
+      if (error instanceof MonoripperError && error.code === 'SHUTTING_DOWN') throw cleanupError
+      // Preserve startup failure; close always releases its writer lock.
+    }
     throw error
-  }
+  } finally { options.startupSignal?.removeEventListener('abort', cancelStartup) }
 }

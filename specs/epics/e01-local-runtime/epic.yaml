@@ -23,7 +23,7 @@ stories:
     title: Container lifecycle
     delta: ADDED
     bcps: 3
-    status: failing
+    status: awaiting_uat
     spec: e01s03-container.md
     tasks: e01s03-tasks.yaml
 constraints:

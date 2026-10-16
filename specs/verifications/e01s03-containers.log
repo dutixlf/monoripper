@@ -1,0 +1,12 @@
+$ bash tests/container/boundaries.sh && bash tests/container/lifecycle.sh
+PASS: non-root image serves HTTP and authenticated loopback control through exec
+PASS: private listeners, read-only root, dropped capabilities, non-root identity and actual cgroup limits
+PASS: unauthorized mutation refused, revision unchanged and secret absent from metadata/state/logs
+PASS: missing secret and read-only state fail startup without falsely reporting ready
+PASS: control-port collision refuses startup and cleans context/resources
+PASS: real exec gRPC enables billing, scales user 1-to-3 and balances ready replicas
+PASS: killed container worker is replaced without changing desired replicas
+PASS: SIGTERM drains the complete response, closes contexts/resources and leaves no host worker PIDs
+PASS: recreation on the same volume restores desired counts and durable operation IDs, not initial defaults
+PASS: hard kill leaves no orphan workers; restart preserves disable state and idempotent retries
+PASS: PID-1 SIGTERM during blocked startup cancels workers and closes resources without readiness

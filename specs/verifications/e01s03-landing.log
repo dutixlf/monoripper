@@ -1,0 +1,12 @@
+$ bash scripts/test-land-branch.sh
+PASS: bootstrap fast-forward landing
+PASS: existing fast-forward landing
+PASS: dirty working tree refused
+PASS: failing verification refused
+PASS: verification cannot publish a modified working tree
+PASS: divergent local main preserved
+PASS: divergent remote main preserved
+PASS: unexpected push destination refused
+PASS: remote lookup failure fails closed
+PASS: feature branch conflict atomically prevents updating main
+PASS: rejected atomic push retains all commits and leaves origin unchanged

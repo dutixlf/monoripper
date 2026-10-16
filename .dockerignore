@@ -1,0 +1,14 @@
+**
+!Dockerfile
+!.dockerignore
+!package.json
+!bun.lock
+!tsconfig.json
+!tsconfig.build.json
+!src/
+!src/*.ts
+!src/control.proto
+!examples/
+!examples/container/
+!examples/container/*.ts
+!examples/container/control.sh

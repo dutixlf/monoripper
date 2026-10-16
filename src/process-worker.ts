@@ -77,7 +77,10 @@ export async function startWorker(context: string, app: AppDefinition, options: 
     if (response.status !== 204 || worker.exited) throw new MonoripperError('CONTEXT_START_FAILED', `${context} failed readiness probe`)
     return worker
   } catch (error) {
-    try { await stop() } catch { /* Preserve startup error; stop already waited/killed the process. */ }
+    try { await stop() } catch (cleanupError) {
+      if (signal.aborted) throw cleanupError // A cancelled startup must not disguise failed cleanup as a clean stop.
+      // Preserve the original startup error after the process has exited.
+    }
     throw error
   } finally { clearTimeout(timer); signal.removeEventListener('abort', aborted) }
 }

@@ -63,6 +63,8 @@ The three snippets belong to separate files. The complete runnable example is in
 The context factory returns the supplied `app`. Use `app.use(plugin)` for existing Elysia routers.
 Do not call `.listen()` inside a context. The adapter awaits async `onStart`/`onStop` hooks and closes resources in reverse order.
 The worker cleans up after startup failure, a stop signal, or loss of its parent IPC connection.
+Programmatic `serve` accepts an optional `startupSignal` to cancel initialization. After it resolves, use `Runtime.stop()`.
+The CLI handles SIGTERM/SIGINT during worker startup as well as normal service. Cleanup failures remain errors.
 
 ## Local configuration
 
@@ -198,6 +200,19 @@ No force push, reset, or Git-guard disablement is used. Origin fetch/push URLs m
 If push fails, the workflow does not roll back history. Resolve the cause, return to the feature branch, and retry.
 This transfers source, not npm publication or application deployment. The workflow does not configure CI.
 
+## Container example
+
+See [examples/container/README.md](examples/container/README.md) for the pinned non-root Debian/glibc image and rootless Podman commands.
+Only HTTP is published. Administrative CLI commands run through `podman exec` and read a mounted secret.
+The example supports read-only root, a persistent state volume, bounded resources and graceful SIGTERM, including blocked worker startup.
+
+```sh
+bun run test:container
+```
+
+This opt-in suite requires real rootless Podman. It checks boundaries, scale/recovery, recreation, hard kill and response drain.
+It does not silently skip when the engine is unavailable. Remote TLS control and registry bootstrap remain future work.
+
 ## External backend and embedded PostgreSQL
 
 ```sh
@@ -238,5 +253,6 @@ Upstream AGPL code remains external test input and is not included in the publis
 Registry/deploy, autoscaling, WebSocket/SSE, cross-node calls, and controller HA are absent. Persistence saves desired state, not JS heaps or active requests.
 The HTTP port does not provide authentication. Elysia contexts must implement business auth. Public services also need a standard TLS ingress.
 Replicas share container limits. Exactly-once guarantees and isolation of untrusted code are not provided.
-Next step: container lifecycle (`e01s03`), then registry/releases. Local e01s02 control is implemented. User UAT is still required.
+Local e01s01/e01s02 control and e01s03 container checks are implemented. User UAT is still required before closing e01.
+Next product stage: e02 registry/releases. The current image embeds an example, not the future release delivery mechanism.
 Design and roadmap: [specs/README.md](specs/README.md).

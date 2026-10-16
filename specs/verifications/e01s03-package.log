@@ -1,0 +1,69 @@
+$ bun scripts/test-package.ts
+$ rm -rf dist && bun build src/index.ts src/cli.ts src/worker.ts --target bun --external elysia --external @grpc/grpc-js --external @grpc/proto-loader --splitting --outdir dist --entry-naming '[name].js' --chunk-naming 'chunk-[hash].js' && cp src/control.proto dist/control.proto && tsc -p tsconfig.build.json
+Bundled 17 modules in 5ms
+
+  index.js            0.60 KB    (entry point)
+  chunk-a3s4s1df.js   44.62 KB   (chunk)
+  chunk-x75k0qv2.js   4.16 KB    (chunk)
+  chunk-mdnseqsw.js   401 bytes  (chunk)
+  chunk-2c88g3mv.js   499 bytes  (chunk)
+  cli.js              6.13 KB    (entry point)
+  worker.js           5.51 KB    (entry point)
+  chunk-6rpbnycm.js   3.28 KB    (chunk)
+  chunk-vxys6ydp.js   3.13 KB    (chunk)
+
+bun pack v1.3.13 (bf2e2cec)
+
+packed 1.54KB package.json
+packed 15.88KB README.md
+packed 373B dist/check.d.ts
+packed 499B dist/chunk-2c88g3mv.js
+packed 3.28KB dist/chunk-6rpbnycm.js
+packed 44.62KB dist/chunk-a3s4s1df.js
+packed 401B dist/chunk-mdnseqsw.js
+packed 3.13KB dist/chunk-vxys6ydp.js
+packed 4.16KB dist/chunk-x75k0qv2.js
+packed 30B dist/cli.d.ts
+packed 6.13KB dist/cli.js
+packed 0.60KB dist/config.d.ts
+packed 0.64KB dist/control-client.d.ts
+packed 112B dist/control-protocol.d.ts
+packed 1.22KB dist/control-types.d.ts
+packed 1.29KB dist/control.proto
+packed 0.91KB dist/controller.d.ts
+packed 2.77KB dist/definitions.d.ts
+packed 288B dist/grpc-server.d.ts
+packed 298B dist/http.d.ts
+packed 0.59KB dist/index.d.ts
+packed 0.60KB dist/index.js
+packed 0.54KB dist/ownership.d.ts
+packed 0.53KB dist/process-worker.d.ts
+packed 0.57KB dist/runtime.d.ts
+packed 0.81KB dist/state-store.d.ts
+packed 0.76KB dist/worker-pool.d.ts
+packed 213B dist/worker.d.ts
+packed 5.51KB dist/worker.js
+
+/tmp/monoripper-package-bJ32vE/monoripper.tgz
+
+Total files: 29
+Shasum: 808517ffc137feb162046bd48f13c1c610890064
+Integrity: sha512-xwggY9344FtGF[...]w2/thpzllvNWg==
+Unpacked size: 98.28KB
+Packed size: 28.92KB
+bun install v1.3.13 (bf2e2cec)
+Resolving dependencies
+Resolved, downloaded and extracted [49]
+Saved lockfile
+
++ monoripper@./monoripper.tgz
+
+52 packages installed [3.13s]
+
+Blocked 1 postinstall. Run `bun pm untrusted` for details.
+PASS: installed npm archive starts its bundled worker outside the source checkout
+monoripper serve --config <file> [--host <host>] [--port <port>]
+monoripper check --app <manifest>
+monoripper status|scale|operation --controller <loopback:port> --project <name> [--environment <name>]
+scale --context <name> --replicas <count> [--wait]
+operation --id <operationId> [--wait]

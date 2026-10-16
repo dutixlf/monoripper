@@ -68,19 +68,31 @@ async function main() {
       ...(values.port !== undefined ? { port: Number(values.port) } : {}),
     }
   }
-  const runtime = await serve(await loadConfig(values.config, overrides))
+  const startup = new AbortController()
+  let runtime: Awaited<ReturnType<typeof serve>> | undefined
   let stopping = false
   const shutdown = () => {
     if (stopping) return
     stopping = true
-    runtime.stop().then(() => process.exit(0), error => {
+    startup.abort()
+    if (runtime) runtime.stop().then(() => process.exit(0), error => {
       console.error(error instanceof Error ? error.message : 'Shutdown failed')
       process.exit(1)
     })
   }
   process.on('SIGTERM', shutdown)
   process.on('SIGINT', shutdown)
-  console.log(JSON.stringify({ event: 'listening', url: runtime.url.href, workers: runtime.status(), ...(runtime.controlAddress ? { controlAddress: runtime.controlAddress } : {}) }))
+  try {
+    const settings = await loadConfig(values.config, overrides)
+    if (stopping) return
+    runtime = await serve({ ...settings, startupSignal: startup.signal })
+    if (stopping) { await runtime.stop(); return }
+    console.log(JSON.stringify({ event: 'listening', url: runtime.url.href, workers: runtime.status(), ...(runtime.controlAddress ? { controlAddress: runtime.controlAddress } : {}) }))
+  } catch (error) {
+    if (!(stopping && error instanceof MonoripperError && error.code === 'SHUTTING_DOWN')) throw error
+  } finally {
+    if (!runtime) { process.off('SIGTERM', shutdown); process.off('SIGINT', shutdown) }
+  }
 }
 
 if (import.meta.main) {

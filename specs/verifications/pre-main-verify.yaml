@@ -6,7 +6,8 @@ target_branch: main
 reviewed_base: 6100bad
 reviewed_checkpoint: dba2b85
 status: passed
-integration_status: blocked_by_git_guard_missing_approved_landing_workflow
+integration_status: approved_landing_workflow_installed
+landing_evidence: landing-workflow.md
 bugs_fixed:
   - id: BUG-001
     evidence: ../bugs/BUG-001.md

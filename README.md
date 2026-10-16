@@ -172,6 +172,7 @@ bun test tests
 bun run build
 bun dist/cli.js --help
 bun run test:package
+bun run test:landing
 python3 scripts/check-specs.py
 ```
 
@@ -181,6 +182,21 @@ Other platforms are unverified. They can require permission for the correspondin
 Control tests exercise real SetContext/GetStatus/GetOperation. Autoscale explicitly returns UNIMPLEMENTED.
 After build, create a local npm archive with `bun pm pack --ignore-scripts --destination /tmp/monoripper-package`.
 This command publishes nothing. The product license is undecided. `UNLICENSED` is intentional.
+
+### Land a verified branch on main
+
+Only after user authorization, from a clean feature branch:
+
+```sh
+bash scripts/land-branch.sh feat/local-control
+```
+
+The workflow runs typecheck, tests, package smoke, specs checks, and its own Git regression tests.
+It then performs only a fast-forward and a normal atomic push of the verified commit to `main` and the source branch.
+The first push without an existing `origin/main` is supported. History and the feature branch are preserved.
+No force push, reset, or Git-guard disablement is used. Origin fetch/push URLs must match.
+If push fails, the workflow does not roll back history. Resolve the cause, return to the feature branch, and retry.
+This transfers source, not npm publication or application deployment. The workflow does not configure CI.
 
 ## External backend and embedded PostgreSQL
 

@@ -40,6 +40,17 @@ Scope: the entire local-control diff from 6100bad and current regression fixes b
 - The full regression suite, installed-package smoke, and real private-backend/PostgreSQL checks passed again.
 - This is another self-review, not an independent audit. Evidence: [pre-main verify](../verifications/pre-main-verify.yaml).
 
+## Landing workflow review — 2026-10-16
+
+User explicitly approved installing the protected-branch landing workflow.
+Reviewed `scripts/land-branch.sh` and its disposable-repository tests: quoted/validated branch inputs,
+fixed destination `main`, matching origin URLs, ancestry and clean-tree checks, mandatory verification,
+verified commit pinning, non-force atomic push, and final remote SHA check.
+The guard exception is scoped to the landing script after checks; global hooks are unchanged.
+Eleven regression scenarios pass, including divergence, verification failure, unexpected push URL,
+and atomic rejection. No new runtime dependencies, secrets or application network endpoints.
+Evidence: [landing workflow](../verifications/landing-workflow.md). Self-review only.
+
 ## Verdict
 
 Self-review found no unresolved concrete HIGH/CRITICAL findings.

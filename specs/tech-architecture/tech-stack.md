@@ -1,6 +1,6 @@
 # Monoripper architecture
 
-Status: target design. Local HTTP slice e01s01 is implemented. Other roles follow the roadmap.
+Status: target design. e01s01 HTTP and e01s02 local control are implemented. Other roles follow the roadmap.
 Actual API and limitations: [project README](../../README.md). Purpose: define component boundaries and invariants.
 Basis: [scope](../product/SCOPE_LATEST.yaml), [decisions for agreement](../README.md).
 
@@ -150,7 +150,7 @@ The prototype does not coordinate cron/jobs. Application code must explicitly de
 | --- | --- | --- |
 | Bun with built-in spawn/build/test/fetch | [OK] selected runtime | Pin the version and verify real processes/builds |
 | Elysia | [OK] user-selected | Pin the major version and verify hooks, plugins, and shutdown |
-| `@grpc/grpc-js` | [OK] candidate | Verify actual client/server on Bun, including metadata, deadlines, errors, and shutdown |
+| `@grpc/grpc-js` 1.14.6 + proto-loader 0.8.1 | [OK] runtime dependencies | Real protobuf auth/status/scale, crash/replay, and installed package verified |
 | TypeScript compiler API | [OK] import checker candidate | Verify path aliases, re-exports, and dynamic imports |
 | Tar implementation | Undecided | Compare Bun built-ins with a small library. Safe extraction is mandatory |
 | Storage | Files + JSON snapshot | Verify atomic replacement and recovery after interrupted writes |

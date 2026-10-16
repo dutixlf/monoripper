@@ -8,6 +8,7 @@ export interface WorkerSpec {
   app: AppDefinition
   token: string
   maxRequestBodyBytes: number
+  shutdownTimeoutMs?: number
 }
 
 let app: AnyElysia | undefined
@@ -16,6 +17,7 @@ const resources: { definition: ResourceDefinition<unknown>; value: unknown }[] =
 let stopHooks: NonNullable<AnyElysia['event']['stop']> = []
 let stopping = false
 let started = false
+let disconnectTimeoutMs = 10_000
 let stopPromise: Promise<void> | undefined
 const send = (message: object) => { if (process.connected) process.send?.(message) }
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error)
@@ -36,6 +38,7 @@ async function cleanup(): Promise<void> {
 }
 
 async function start(spec: WorkerSpec): Promise<void> {
+  disconnectTimeoutMs = spec.shutdownTimeoutMs ?? 10_000
   const declaration = spec.app.contexts[spec.context]!
   const values = new Map<string, unknown>()
   for (const name of declaration.resources ?? []) {
@@ -119,6 +122,10 @@ process.on('message', async (message: unknown) => {
     process.exit(1)
   }
 })
-process.on('disconnect', () => { void stopAndExit() })
+process.on('disconnect', () => {
+  // A dead parent cannot enforce its deadline; do not leave orphan workers stuck in cleanup.
+  setTimeout(() => process.kill(process.pid, 'SIGKILL'), disconnectTimeoutMs).unref()
+  void stopAndExit()
+})
 process.on('SIGTERM', () => { void stopAndExit() })
 process.on('SIGINT', () => { void stopAndExit() })

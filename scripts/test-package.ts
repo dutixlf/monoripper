@@ -24,15 +24,20 @@ export default defineContext({create:({app})=>app.get('/status',()=>({pid:proces
 `)
   await writeFile(join(temp, 'smoke.ts'), `
 import {strict as assert} from 'node:assert'
-import {defineApp,monoripper,checkApp} from 'monoripper'
+import {defineApp,monoripper,checkApp,connectControl} from 'monoripper'
 const app=defineApp({project:'consumer',contexts:{api:{entry:'./context.ts',owns:[{method:'GET',path:'/status'}]}}})
 assert.deepEqual(checkApp(app,{root:import.meta.dir}),[])
-const runtime=await monoripper.serve({app,root:import.meta.dir,initial:{api:{replicas:1}},http:{port:0}})
+process.env.CONSUMER_CONTROL_TOKEN=crypto.randomUUID()+crypto.randomUUID()
+const runtime=await monoripper.serve({app,root:import.meta.dir,initial:{api:{replicas:1}},http:{port:0},dataDir:'./state',control:{port:0,tokenEnv:'CONSUMER_CONTROL_TOKEN'}})
+const client=await connectControl({address:runtime.controlAddress,token:process.env.CONSUMER_CONTROL_TOKEN,project:'consumer'})
 try {
  const response=await fetch(new URL('/status',runtime.url))
  assert.equal(response.status,200)
  assert.notEqual((await response.json()).pid,process.pid)
-} finally {await runtime.stop()}
+ const operation=await client.setContext({context:'api',replicas:2,requestId:'package-scale',expectedRevision:(await client.getStatus()).revision})
+ assert.equal((await client.waitOperation(operation.id)).phase,'succeeded')
+ assert.equal((await client.getStatus()).contexts[0].readyReplicas,2)
+} finally {client.close();await runtime.stop()}
 console.log('PASS: installed npm archive starts its bundled worker outside the source checkout')
 `)
   await run([process.execPath, 'smoke.ts'], temp)

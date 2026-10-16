@@ -9,6 +9,22 @@ export function forwardingHeaders(source: Headers, request = false): Headers {
   return headers
 }
 
+export function leasedBody(body: ReadableStream<Uint8Array> | null, release: () => void): ReadableStream<Uint8Array> | null {
+  let released = false
+  const finish = () => { if (!released) { released = true; release() } }
+  if (!body) { finish(); return null }
+  const reader = body.getReader()
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const next = await reader.read()
+        if (next.done) { finish(); controller.close() } else controller.enqueue(next.value)
+      } catch (error) { finish(); controller.error(error) }
+    },
+    async cancel(reason) { try { await reader.cancel(reason) } finally { finish() } },
+  })
+}
+
 export function publicError(status: number, code: string): Response {
   return Response.json({ error: code }, { status })
 }

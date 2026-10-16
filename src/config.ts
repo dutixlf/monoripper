@@ -9,13 +9,28 @@ export function assertKeys(value: unknown, allowed: readonly string[], label: st
 }
 
 function positive(value: number | undefined, name: string, allowZero = false): void {
-  if (value !== undefined && (!Number.isSafeInteger(value) || value < (allowZero ? 0 : 1))) {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value < (allowZero ? 0 : 1) || value > 0x7fffffff)) {
     throw new MonoripperError('INVALID_CONFIG', `Invalid ${name}`)
   }
 }
 
 export function validateRuntimeConfig(config: Omit<RuntimeConfig, 'app'>): void {
   assertKeys(config.initial, Object.keys(config.initial ?? {}), 'initial')
+  if (config.environment !== undefined && (typeof config.environment !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(config.environment))) throw new MonoripperError('INVALID_CONFIG', 'Invalid environment')
+  if (config.dataDir !== undefined && (typeof config.dataDir !== 'string' || !config.dataDir)) throw new MonoripperError('INVALID_CONFIG', 'Invalid dataDir')
+  if (config.recovery !== undefined) {
+    assertKeys(config.recovery, ['maxRestarts', 'backoffMs'], 'recovery')
+    positive(config.recovery.maxRestarts, 'recovery.maxRestarts', true)
+    positive(config.recovery.backoffMs, 'recovery.backoffMs')
+    if ((config.recovery.maxRestarts ?? 0) > 100) throw new MonoripperError('INVALID_CONFIG', 'recovery.maxRestarts exceeds 100')
+  }
+  if (config.control !== undefined) {
+    assertKeys(config.control, ['host', 'port', 'tokenEnv'], 'control')
+    if (config.control.host !== undefined && !['127.0.0.1', '::1'].includes(config.control.host)) throw new MonoripperError('INVALID_CONFIG', 'Control currently permits loopback only')
+    if (typeof config.control.tokenEnv !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(config.control.tokenEnv)) throw new MonoripperError('INVALID_CONFIG', 'control.tokenEnv must name a credential environment variable')
+    positive(config.control.port, 'control.port', true)
+    if ((config.control.port ?? 0) > 65535) throw new MonoripperError('INVALID_CONFIG', 'Invalid control.port')
+  }
   if (config.http !== undefined) {
     assertKeys(config.http, ['host', 'port', 'maxRequestBodyBytes'], 'http')
     if (config.http.host !== undefined && (typeof config.http.host !== 'string' || !config.http.host)) throw new MonoripperError('INVALID_CONFIG', 'Invalid http.host')
@@ -55,7 +70,7 @@ export async function loadApp(filename: string): Promise<Pick<ServeOptions, 'app
 export async function loadConfig(filename: string, overrides: Partial<RuntimeConfig> = {}): Promise<ServeOptions> {
   const path = resolve(filename)
   const original = (await import(pathToFileURL(path).href)).default as RuntimeConfig
-  const keys = ['app', 'initial', 'http', 'lifecycle', 'env']
+  const keys = ['app', 'initial', 'http', 'lifecycle', 'env', 'recovery', 'environment', 'dataDir', 'control']
   assertKeys(original, keys, 'config')
   validateRuntimeConfig(original)
   assertKeys(overrides, keys, 'override')
@@ -65,10 +80,12 @@ export async function loadConfig(filename: string, overrides: Partial<RuntimeCon
     initial: structuredClone(overrides.initial ?? original.initial),
     http: { ...original.http, ...overrides.http },
     lifecycle: { ...original.lifecycle, ...overrides.lifecycle },
+    recovery: { ...original.recovery, ...overrides.recovery },
+    ...(original.control || overrides.control ? { control: { ...original.control!, ...overrides.control } } : {}),
     env: { ...original.env, ...overrides.env },
   }
   validateRuntimeConfig(config)
   if (typeof config.app !== 'string' || !config.app) throw new MonoripperError('INVALID_CONFIG', 'config.app must be a manifest path')
   const app = await loadApp(resolve(dirname(path), config.app))
-  return { ...config, ...app }
+  return { ...config, ...app, ...(config.dataDir ? { dataDir: resolve(dirname(path), config.dataDir) } : {}) }
 }

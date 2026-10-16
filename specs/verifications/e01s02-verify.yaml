@@ -1,0 +1,60 @@
+story_id: e01s02
+status: automated_passed_awaiting_user_uat
+session_date: '2026-10-16'
+baseline: 6100bad
+branch: feat/local-control
+terminal_verdict:
+  command: bun test tests
+  exit_code: 0
+  stdout_stderr_file: e01s02-tests.log
+  passed: 43
+  failed: 0
+  expect_calls: 187
+  note: One continuous final run. The native Bun stream error in the forced-drain negative test is expected, not a failed test.
+checks:
+  frozen_install: passed
+  typecheck: passed
+  task_verifies: All three exact e01s02-tasks.yaml commands exited 0.
+  installed_package:
+    command: bun run test:package
+    result: passed
+    scope: A clean npm archive consumer starts its worker and protobuf gRPC status/scale/wait. control.proto is present and embedded-postgres is absent.
+  private-backend_postgres:
+    command: bun run test:private-backend:postgres <backend> <packages>
+    result: passed
+    stdout_stderr_file: e01s02-private-backend.log
+    backend_commit: <redacted>
+    steps:
+      - Native PostgreSQL 18, 12 real migrations, complete HTTP app/CRUD.
+      - Separate tags starts with one replica. Protobuf gRPC increases the count to three.
+      - Writer/read PIDs differ. Real service auth, Drizzle, duplicate 409, and soft deletion.
+      - SIGKILL one replica. Bounded recovery restores three.
+      - Controller stop/restart with initial={} restores saved desired=3.
+      - Disable through gRPC returns 503. The shared business database preserves rows.
+  crash_replay:
+    result: passed
+    scope: SIGKILL the CLI controller during an accepted operation. Kernel lock releases, the old worker disappears, and replay retains operationId/requestId.
+  storage:
+    result: passed
+    scope: Native exclusive flock, atomic fsynced snapshots, serialized writes, immutable reads, corrupt/missing-field rejection, read-only FS fail-closed.
+  recovery:
+    result: passed
+    scope: Ready-only routing, finite restart budget, full-body drain, graceful finite body on runtime stop, force deadline without re-enabling disabled context.
+  auth:
+    result: passed
+    scope: Unauthorized mutation denied, project/environment scope, malformed protobuf mandatory revision, remote plaintext refused, credential absent from worker/state/public status.
+    metadata_safety: Invalid ASCII credentials rejected without echoing secret values.
+security_review: ../security/REVIEW.md
+manual_uat:
+  status: pending_user
+  example: examples/local/monoripper.control.config.ts
+limitations:
+  - Control supports only loopback plus one admin credential. TLS/remote/RBAC are not implemented yet.
+  - The persistent store requires Linux/glibc, Bun FFI, and a local filesystem, not shared/NFS state.
+  - Cold startup fails before control bind if a saved context cannot initialize.
+  - Global lifecycle queue, 64 total replicas, and 10000 retained operations are prototype limits.
+  - Operator mutations and controller restarts reset recovery budgets. This is not a durable circuit breaker.
+  - No registry, release rollout, autoscaling, HA, or exactly-once job guarantees.
+  - Container and load matrices belong to later stages. Production readiness is not claimed.
+  - No independent review ran. Self-review and real fault tests were performed.
+git_policy: At user request, commit green checkpoints only, without failing RED commits. No push occurred.

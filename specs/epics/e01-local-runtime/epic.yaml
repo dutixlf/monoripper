@@ -16,7 +16,7 @@ stories:
     title: gRPC control and recovery
     delta: ADDED
     bcps: 8
-    status: failing
+    status: awaiting_uat
     spec: e01s02-control-lifecycle.md
     tasks: e01s02-tasks.yaml
   - id: e01s03

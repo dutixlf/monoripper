@@ -1,8 +1,8 @@
 schema_version: 1
-active_flow: build_epic
+active_flow: verify_work
 active_epic_id: e01
 active_story_id: e01s02
-phase: execute
+phase: verify
 implementation_started: true
 vcs:
   kind: git
@@ -26,7 +26,9 @@ implementation_decisions:
   - Explicit local TS/JS configuration, with defaults, then config, then explicit CLI overrides.
   - Application entries resolve relative to the manifest. Runtime configuration is not persistent desired state.
   - Unknown config options are rejected. Config hot reload is not implemented yet.
-  - Initial replicas are configured locally. Runtime gRPC control is not implemented in e01s01.
+  - Local protobuf gRPC manages replicas. Initial applies only to a new durable snapshot.
+  - Persistence uses native Linux flock and atomic JSON. Control is loopback-only with credentials from host env.
+  - Worker recovery is bounded. Scale-down covers response bodies. Pending operations replay after controller crashes.
   - At user request, embedded-postgres is test-only. One temporary server serves all replicas.
   - The full private-backend app and separate tags context use real SQL. Original repositories remain unchanged.
 pending_approval:
@@ -48,18 +50,22 @@ validation:
   documentation_structure: passed
   yaml_parse_and_cross_references: passed
   planned_verify_shell_syntax: passed
-  runtime_tests: 28_pass_0_fail
+  runtime_tests: 43_pass_0_fail
   typecheck: passed
-  installed_package_smoke: passed
+  installed_package_smoke: passed_with_protobuf_control
   private-backend_shared_modules_integration: passed
   full_private-backend_backend: passed_health_openapi_and_crud
   sliced_private-backend_tags: passed_real_postgres_two_replicas
   embedded_postgres_cleanup: passed_callback_failure
+  grpc_auth_scope_and_idempotency: passed
+  controller_sigkill_replay: passed
+  worker_recovery_budget_and_drain: passed
+  private-backend_grpc_scale_recover_restore_disable: passed
   manual_uat: pending
   bundled_plan_validator: blocked_missing_pyyaml
-  evidence: specs/verifications/embedded-postgres-verify.yaml
+  evidence: specs/verifications/e01s02-verify.yaml
 handoff:
-  next_skill: develop-tdd
-  next_action: Native atomic state store verified. Integrate worker pool/controller, then protobuf gRPC and crash/replay tests.
+  next_skill: verify-work
+  next_action: User UAT of examples/local/monoripper.control.config.ts. Next implementation slice is e01s03 container lifecycle.
   entrypoint: specs/epics/e01-local-runtime/e01s02-control-lifecycle.md
-  gate: e01s02_in_progress
+  gate: e01s02_automated_passed_user_uat_pending

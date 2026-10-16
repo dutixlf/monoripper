@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { StateStore } from '../../src/state-store'
@@ -30,10 +30,25 @@ test('corrupt state is not silently reset and the kernel lock is released after 
     await writeFile(join(directory, 'state.json'), '{broken')
     await expect(StateStore.open({ ...scope, directory })).rejects.toMatchObject({ code: 'INVALID_STATE' })
     expect(await readFile(join(directory, 'state.json'), 'utf8')).toBe('{broken')
+    await writeFile(join(directory, 'state.json'), JSON.stringify({ schemaVersion: 1, project: scope.project, environment: scope.environment, revision: 0, desired: { user: 1 }, operations: [] }))
+    await expect(StateStore.open({ ...scope, directory })).rejects.toMatchObject({ code: 'INVALID_STATE' })
     await rm(join(directory, 'state.json'))
     const store = await StateStore.open({ ...scope, directory })
     await store.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('write failure rejects acceptance and makes subsequent mutations fail closed', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'monoripper-readonly-state-'))
+  const store = await StateStore.open({ ...scope, directory })
+  try {
+    await chmod(directory, 0o500)
+    await expect(store.update(s => { s.revision++ })).rejects.toMatchObject({ code: 'STATE_WRITE_FAILED' })
+    expect(store.healthy).toBe(false)
+    expect(store.read().revision).toBe(0)
+    expect(JSON.parse(await readFile(join(directory, 'state.json'), 'utf8')).revision).toBe(0)
+    await expect(store.update(s => { s.revision++ })).rejects.toMatchObject({ code: 'STATE_UNAVAILABLE' })
+  } finally { await chmod(directory, 0o700); await store.close(); await rm(directory, { recursive: true, force: true }) }
 })
 
 test('invalid mutation cannot replace the last valid durable snapshot', async () => {

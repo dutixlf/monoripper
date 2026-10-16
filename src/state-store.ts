@@ -23,9 +23,10 @@ function validate(snapshot: Snapshot, scope: Scope) {
     assertKeys(snapshot, ['schemaVersion', 'project', 'environment', 'revision', 'desired', 'operations'], 'state')
     if (snapshot.schemaVersion !== 1 || snapshot.project !== scope.project || snapshot.environment !== scope.environment || !uint(snapshot.revision)) invalid()
     assertKeys(snapshot.desired, scope.contexts, 'desired')
+    if (scope.contexts.some(name => !Object.hasOwn(snapshot.desired, name))) invalid()
     if (Object.values(snapshot.desired).some(n => !uint(n) || n > 64) || Object.values(snapshot.desired).reduce((a, b) => a + b, 0) > 64) invalid()
     if (!Array.isArray(snapshot.operations) || snapshot.operations.length > 10000) invalid()
-    const ids = new Set<string>(), requests = new Set<string>()
+    const ids = new Set<string>(), requests = new Set<string>(), active = new Set<string>()
     for (const operation of snapshot.operations) {
       assertKeys(operation, ['id', 'requestId', 'context', 'replicas', 'revision', 'phase', 'createdAt', 'updatedAt', 'error', 'payloadHash', 'previousReplicas'], 'operation')
       if (typeof operation.id !== 'string' || !/^[a-f0-9-]{36}$/.test(operation.id) || ids.has(operation.id)) invalid()
@@ -34,12 +35,17 @@ function validate(snapshot: Snapshot, scope: Scope) {
       if (!uint(operation.revision) || operation.revision > snapshot.revision || !['accepted', 'applying', 'succeeded', 'failed'].includes(operation.phase)) invalid()
       if (!Number.isSafeInteger(operation.createdAt) || operation.createdAt < 0 || !Number.isSafeInteger(operation.updatedAt) || operation.updatedAt < operation.createdAt) invalid()
       if (typeof operation.payloadHash !== 'string' || !/^[a-f0-9]{64}$/.test(operation.payloadHash)) invalid()
+      if (operation.phase === 'accepted' || operation.phase === 'applying') {
+        if (active.has(operation.context) || snapshot.desired[operation.context] !== operation.replicas) invalid()
+        active.add(operation.context)
+      }
       if (operation.error) {
         assertKeys(operation.error, ['code', 'message'], 'error')
         if (typeof operation.error.code !== 'string' || operation.error.code.length > 80 || typeof operation.error.message !== 'string' || operation.error.message.length > 512) invalid()
       }
       ids.add(operation.id); requests.add(operation.requestId)
     }
+    if (snapshot.revision + active.size > 0xffffffff) invalid() // Reserve revisions for failed-operation rollback.
   } catch (error) { if (error instanceof MonoripperError && error.code === 'INVALID_STATE') throw error; invalid() }
 }
 
@@ -61,7 +67,8 @@ export class StateStore {
           const { dlopen } = await import('bun:ffi')
           const native = dlopen('libc.so.6', { flock: { args: ['i32', 'i32'], returns: 'i32' } })
           library = native
-          if (native.symbols.flock(fd.fd, 6) !== 0) throw new MonoripperError('STATE_LOCKED', 'Another controller owns this state directory')
+          // Linux LOCK_EX | LOCK_NB; retain this inode instead of reaping PID lockfiles.
+          if (native.symbols.flock(fd.fd, 2 | 4) !== 0) throw new MonoripperError('STATE_LOCKED', 'Another controller owns this state directory')
           release = async () => { await fd.close(); native.close() }
         } catch (error) { await fd.close(); library?.close(); throw error }
       }
@@ -79,7 +86,6 @@ export class StateStore {
         } finally { await file?.close() }
       }
       validate(loaded, scope)
-      for (const name of scope.contexts) if (!Object.hasOwn(loaded.desired, name)) loaded.desired[name] = 0
       const store = new StateStore(scope, loaded, release)
       await store.persist(loaded)
       return store

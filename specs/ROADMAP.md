@@ -1,6 +1,6 @@
 # Implementation roadmap
 
-Status: e01s01 automated checks passed, awaiting UAT. e01s02 and later stages are not implemented.
+Status: e01s01/e01s02 automated checks passed, awaiting UAT. e01s03 and later stages are not implemented.
 Purpose: deliver verifiable value through vertical slices.
 The full product includes e01–e03. Exclusion from e01 does not cancel a requirement.
 
@@ -11,7 +11,7 @@ The full product includes e01–e03. Exclusion from e01 does not cancel a requir
 - e01s01 commands passed. See [initial verification](verifications/e01s01-verify.yaml) and [PostgreSQL follow-up](verifications/embedded-postgres-verify.yaml).
 - Other verify commands are future checks, not completed tests.
 - Test commands use `test -f ... && bun test ...`. Missing files cannot produce a false PASS.
-- e01 has detailed story specs. e01s01 tasks pass, while e01s02/e01s03 still fail. e02/e03 remain a roadmap.
+- e01 has detailed story specs. e01s01/e01s02 tasks pass, while e01s03 still fails. e02/e03 remain a roadmap.
 - Create files/packages only as needed. Do not build speculative layers without an end-to-end scenario.
 - Pin libraries and versions after verification. Do not publish npm packages or deploy without a separate request.
 
@@ -112,4 +112,4 @@ e03 gate: fake-clock tests are deterministic. Real load measurements cannot be r
 
 `python3 scripts/check-specs.py` checks document structure and local links, not future runtime behavior.
 A real parser checks YAML separately. Protocols and the bundler require future executable tests.
-Next action: e01s01 UAT, then e01s02 gRPC/durable state. gRPC compatibility does not mean the control API is complete.
+Next action: e01s02 UAT, then e01s03 container lifecycle. Local protobuf control is verified, not remote TLS/HA.

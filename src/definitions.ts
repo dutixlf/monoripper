@@ -29,6 +29,10 @@ export interface RuntimeConfig {
   initial: Record<string, { replicas: number }>
   http?: { host?: string; port?: number; maxRequestBodyBytes?: number }
   lifecycle?: { startupTimeoutMs?: number; shutdownTimeoutMs?: number; requestTimeoutMs?: number }
+  recovery?: { maxRestarts?: number; backoffMs?: number }
+  environment?: string
+  dataDir?: string
+  control?: { host?: '127.0.0.1' | '::1'; port?: number; tokenEnv: string }
   env?: Record<string, string>
 }
 export interface ServeOptions extends Omit<RuntimeConfig, 'app'> {

@@ -1,6 +1,6 @@
 # Monoripper — plan and design
 
-Status: **initial local e01s01 prototype implemented, automated checks passed, awaiting UAT**.
+Status: **local contexts and control e01s01/e01s02 implemented, automated checks passed, awaiting UAT**.
 Current run instructions and implemented API: [project README](../README.md). Other documents also describe future stages.
 Purpose: record agreements and provide an implementation baseline without repeated design work.
 
@@ -17,7 +17,7 @@ The target audience is small projects that outgrow one process but do not yet ne
 6. [Roadmap](ROADMAP.md) — vertical slices and readiness criteria.
 
 Design examples are **target API / pseudocode**, not a complete list of implemented features.
-`serve` and `check` work. Control, registry, and deployment are not implemented yet.
+serve/check, protobuf control scale/status/operation, persistent desired state, and worker recovery work. Registry/deploy are not implemented yet.
 Bun 1.3.13, Elysia 1.4.30, gRPC JS 1.14.6, and TypeScript 5.9.3 are verified and pinned.
 
 ## Confirmed decisions
@@ -53,9 +53,9 @@ Application/release descriptions, local node settings, and persistent desired st
 Explicit TS/JS config is implemented: defaults → config → explicit CLI overrides, without shared mutable configuration.
 Controller/local-policy interaction follows in later stages.
 
-Current step: user UAT of the example. Next is e01s02 with production gRPC control and durable desired state.
+Current step: UAT of the control example. Next is e01s03 container lifecycle. Control is local-only, not production TLS/RBAC.
 The full external backend `src/app.ts` and a separate tags context passed real migrations/CRUD on embedded PostgreSQL 18.
 No publication or registry deployment occurred. OAuth and other domain flows are not verified.
 
 Document structure check: `python3 scripts/check-specs.py`.
-Results: [PostgreSQL follow-up](verifications/embedded-postgres-verify.yaml), [initial prototype](verifications/e01s01-verify.yaml), [historical plan review](verifications/planning.md).
+Results: [local control](verifications/e01s02-verify.yaml), [PostgreSQL follow-up](verifications/embedded-postgres-verify.yaml), [initial prototype](verifications/e01s01-verify.yaml), [historical plan review](verifications/planning.md).

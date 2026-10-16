@@ -7,7 +7,7 @@ Manage selected contexts and replicas through durable desired state instead of m
 As an operator, I enable billing, set three user replicas, and restore configuration after restart.
 
 ## 3. Status and complexity
-Draft, failing ledger. 8 BCP, P0 risk.
+Implemented, automated checks passing, user UAT pending. 8 BCP, P0 risk.
 
 ## 4. Dependencies
 e01s01, stable readiness/HTTP semantics, and confirmed local state storage.
@@ -44,7 +44,7 @@ The controller serializes decisions. The agent owns processes. The routing snaps
 Status exposes unauthorized requests, conflicting revisions, invalid payloads, startup timeouts, exhausted restart budgets, and drain timeouts.
 
 ## 13. Security
-Control binds to loopback by default. Verify remote credentials/TLS before mutation.
+Control binds only to loopback. Credential and scope checks precede mutations. Remote/TLS are rejected as unsupported for now.
 Return safe client errors. Do not mix details and secrets in logs.
 
 ## 14. Compatibility
@@ -74,5 +74,6 @@ Restart the main process under a supervisor. Verify status and saved configurati
 Release updates, multiple controllers, distributed consensus, and request migration after a crash.
 
 ## 20. Gate and handoff
-e01s03 receives a stable stop/recovery contract. All feature checks are currently planned only.
+e01s03 receives a verified local stop/recovery contract. All task verification commands pass. User UAT is not confirmed yet.
+Evidence: [e01s02-verify.yaml](../../verifications/e01s02-verify.yaml). The full package and private-backend/PostgreSQL passed verification.
 Structure check: `python3 scripts/check-specs.py`.

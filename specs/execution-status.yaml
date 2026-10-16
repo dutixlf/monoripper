@@ -3,7 +3,7 @@ status: in_progress
 development_status:
   e01: in_progress
   e01s01: awaiting_uat
-  e01s02: failing
+  e01s02: awaiting_uat
   e01s03: failing
   e02: planned
   e02s01: planned
@@ -13,4 +13,4 @@ development_status:
   e03s01: planned
   e03s02: planned
   e03s03: planned
-note: e01s01 automated checks pass and user UAT is pending. Other failing/planned tasks are not implemented yet.
+note: e01s01/e01s02 automated checks pass and user UAT is pending. e01s03 and other planned tasks are not implemented yet.

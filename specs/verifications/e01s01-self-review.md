@@ -1,5 +1,6 @@
 # e01s01 — self-review
 
+Historical initial prototype review before Git initialization. Current review: [local control](../security/REVIEW.md).
 Purpose: record the scope of the initial prototype self-review.
 This is not an independent review or a complete git-diff security gate. Monoripper does not have a Git repository yet.
 

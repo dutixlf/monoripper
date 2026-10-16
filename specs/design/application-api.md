@@ -1,7 +1,7 @@
 # Application API: Elysia, contexts, and shared modules
 
 Status: target API and pseudocode. Purpose: show changes in the user application.
-For the implemented subset, see the [project README](../../README.md). `services.fetch`, control, and persisted state are not implemented yet.
+For the implemented subset, see the [project README](../../README.md). Local control and persisted desired state exist. `services.fetch` is still absent.
 Related documents: [architecture](../tech-architecture/tech-stack.md), [runtime](runtime.md).
 
 ## 1. Application structure

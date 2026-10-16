@@ -18,8 +18,11 @@ export class Controller {
     const snapshot = this.store.read()
     for (const [context, count] of Object.entries(snapshot.desired)) {
       const pending = snapshot.operations.find(operation => operation.context === context && ['accepted', 'applying'].includes(operation.phase))
-      if (pending) await this.enqueue(() => this.apply(pending.id))
-      else await this.pool.scale(context, count)
+      if (pending) {
+        await this.enqueue(() => this.apply(pending.id))
+        // Replayed growth can roll back desired state without any old processes still alive.
+        await this.pool.scale(context, this.store.read().desired[context]!)
+      } else await this.pool.scale(context, count)
     }
   }
   status(): ControlStatus {

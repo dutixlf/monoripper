@@ -27,6 +27,19 @@ Purpose: check trust boundaries before a green checkpoint. No independent review
 5. URL-based authority validation lost explicit port 80 and accepted query suffixes.
    Replaced with exact loopback host:port grammar. Regression checks port 80 and rejects query suffixes.
 
+## Pre-main recheck — 2026-10-16
+
+Scope: the entire local-control diff from 6100bad and current regression fixes before fast-forward to main.
+
+- Rechecked gateway headers/worker URLs, gRPC auth/scope, state schema/lock, spawn, and drain.
+- BUG-001: replayed failed growth restores both desired state and actual previous replicas.
+  Failure to restore the previous count still aborts cold startup.
+- BUG-002: invalid Connection tokens no longer throw during header forwarding.
+  The request lease starts only after URL/headers/deadline preparation. Invalid HTTP leaves no phantom inFlight count.
+- No new dependencies, shell commands, auth bypasses, or broader network exposure.
+- The full regression suite, installed-package smoke, and real private-backend/PostgreSQL checks passed again.
+- This is another self-review, not an independent audit. Evidence: [pre-main verify](../verifications/pre-main-verify.yaml).
+
 ## Verdict
 
 Self-review found no unresolved concrete HIGH/CRITICAL findings.

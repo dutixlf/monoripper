@@ -33,6 +33,16 @@ test('proxy preserves body, params, query, schemas and middleware, strips privat
   expect(await invalid.json()).toEqual({ error: 'application validation' })
 })
 
+test('invalid Connection tokens cannot throw during forwarding or pin a worker lease', async () => {
+  const response = await fetch(url('/v1/echo/42'), {
+    method: 'POST', body: JSON.stringify({ name: 'user' }), headers: {
+      'content-type': 'application/json', connection: 'invalid token, x-remove-me', 'x-remove-me': 'private',
+    },
+  })
+  expect(response.status).toBe(200)
+  expect((await response.json()).connectionNominated).toBeNull()
+})
+
 test('cookies, status and redirect are preserved without following the redirect', async () => {
   const response = await fetch(url('/v1/cookies'))
   expect(response.status).toBe(201)

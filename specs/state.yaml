@@ -8,7 +8,8 @@ vcs:
   kind: git
   branch: feat/local-control
   baseline: 6100bad
-  note: Git initialized at user request. GitLab identity configured globally. Push is not authorized.
+  remote: git@gitlab.com:akawalive/packages/monoripper.git
+  note: Feature branch pushed. The user authorized main fast-forward/push after checks. BUG-001/002 are fixed and verified.
 confirmed_decisions:
   - One npm package, Elysia, and Bun.
   - Import linting and explicit errors are sufficient for the prototype.
@@ -33,7 +34,8 @@ implementation_decisions:
   - The full private-backend app and separate tags context use real SQL. Original repositories remain unchanged.
 pending_approval:
   - User UAT of the local example and feedback on the initial API.
-blockers: []
+blockers:
+  - Main integration blocked by agent Git guard; approved landing workflow is not installed in this project.
 commit_policy: Commit verified stable checkpoints only. Check RED tests without separate failing commits.
 environment:
   bun: 1.3.13
@@ -50,7 +52,7 @@ validation:
   documentation_structure: passed
   yaml_parse_and_cross_references: passed
   planned_verify_shell_syntax: passed
-  runtime_tests: 43_pass_0_fail
+  runtime_tests: 45_pass_0_fail
   typecheck: passed
   installed_package_smoke: passed_with_protobuf_control
   private-backend_shared_modules_integration: passed
@@ -63,9 +65,11 @@ validation:
   private-backend_grpc_scale_recover_restore_disable: passed
   manual_uat: pending
   bundled_plan_validator: blocked_missing_pyyaml
-  evidence: specs/verifications/e01s02-verify.yaml
+  evidence: specs/verifications/pre-main-verify.yaml
+  pre_main_regression_review: passed_two_bugs_fixed
+  line_coverage_instrumented_process_percent: 98.29
 handoff:
-  next_skill: verify-work
-  next_action: User UAT of examples/local/monoripper.control.config.ts. Next implementation slice is e01s03 container lifecycle.
+  next_skill: release-branch
+  next_action: Configure approved landing workflow for initial remote main, then integrate the tested feature branch. User UAT and e01s03 remain pending.
   entrypoint: specs/epics/e01-local-runtime/e01s02-control-lifecycle.md
   gate: e01s02_automated_passed_user_uat_pending

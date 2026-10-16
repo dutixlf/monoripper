@@ -1,0 +1,63 @@
+type: verification
+context: pre-main review of e01s01/e01s02 after explicit user authorization
+session_date: '2026-10-16'
+source_branch: feat/local-control
+target_branch: main
+reviewed_base: 6100bad
+reviewed_checkpoint: dba2b85
+status: passed
+integration_status: blocked_by_git_guard_missing_approved_landing_workflow
+bugs_fixed:
+  - id: BUG-001
+    evidence: ../bugs/BUG-001.md
+    red: Replayed failed growth left desired=1 and ready=0.
+    green: Failed operation retained; desired=ready=1, healthy=true, HTTP 200.
+  - id: BUG-002
+    evidence: ../bugs/BUG-002.md
+    red: Invalid Connection token caused HTTP 500 and SHUTDOWN_TIMEOUT.
+    green: HTTP 200, nominated header removed, graceful shutdown succeeds.
+checks:
+  frozen_install: passed_no_lockfile_changes
+  typecheck: passed
+  tests:
+    command: bun test --coverage tests
+    exit_code: 0
+    passed: 45
+    failed: 0
+    expect_calls: 193
+    evidence: pre-main-tests.log
+    note: Expected Bun connection error occurs only in forced-drain negative test.
+  coverage:
+    instrumented_lines_percent: 98.29
+    instrumented_functions_percent: 92.51
+    lifecycle_lines: controller/runtime/state-store/worker-pool each 100 percent
+    boundary: Bun parent-process instrumentation; spawned worker/CLI code is exercised by E2E, not included in this percentage.
+  build_and_installed_package:
+    command: bun run test:package
+    result: passed
+    evidence: pre-main-package.log
+    scope: Bundled worker and protobuf control in clean npm archive consumer; native PostgreSQL not shipped.
+  private-backend_postgres:
+    command: bun run test:private-backend:postgres <backend> <packages>
+    result: passed
+    evidence: pre-main-private-backend.log
+    backend_commit: <redacted>
+    scope: PostgreSQL 18, 12 migrations, full backend CRUD, gRPC 1-to-3, kill/recover, restart/restore, disable, cleanup.
+  docs_structure: passed
+  diff_whitespace: passed
+self_audit:
+  correctness: Two reproduced defects fixed with regression tests.
+  security: Rechecked input/auth/state/process boundaries; no unresolved concrete HIGH findings.
+  dependencies: Unchanged; no new supply-chain additions.
+  performance: Bounded header token validation and startup reconciliation; no new polling or dependencies.
+  clarity: Local changes only; no architecture or public API change.
+  style: No project CONVENTIONS.md or configured linter; typecheck and git diff --check used, no invented lint pass.
+  independent_review: not_run
+traceability_gate:
+  verdict: WAIVED
+  rationale: No traceability-matrix.json/blind-spots.json or generator scripts in this repository. Story task verifies and actual runtime evidence remain available; no heuristic PASS claimed.
+ci:
+  status: not_configured
+  note: GitLab pipeline status must be checked after push; no CI-green claim from local tests alone.
+manual_uat: pending_user
+production_ready: false

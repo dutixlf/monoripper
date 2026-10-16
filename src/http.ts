@@ -2,7 +2,11 @@ const hopByHop = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-autho
 
 export function forwardingHeaders(source: Headers, request = false): Headers {
   const headers = new Headers(source)
-  for (const name of (headers.get('connection') ?? '').split(',')) if (name.trim()) headers.delete(name.trim())
+  for (const token of (headers.get('connection') ?? '').split(',')) {
+    const name = token.trim()
+    // Invalid Connection tokens cannot name a valid header and must not reach Headers.delete().
+    if (/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(name)) headers.delete(name)
+  }
   for (const name of hopByHop) headers.delete(name)
   for (const name of [...headers.keys()]) if (name.toLowerCase().startsWith('x-monoripper-')) headers.delete(name)
   if (request) headers.delete('host')

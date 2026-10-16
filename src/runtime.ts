@@ -73,13 +73,13 @@ export async function serve(options: ServeOptions): Promise<Runtime> {
         const counter = counters.get(owner) ?? 0
         counters.set(owner, (counter + 1) % ready.length)
         const worker = ready[counter % ready.length]!
-        worker.inFlight++
-        let released = false
-        const release = () => { if (!released) { released = true; worker.inFlight-- } }
         url.protocol = 'http:'; url.hostname = '127.0.0.1'; url.port = String(worker.port)
         const headers = forwardingHeaders(request.headers, true)
         headers.set('x-monoripper-token', worker.token)
         const deadline = AbortSignal.timeout(requestTimeout)
+        worker.inFlight++
+        let released = false
+        const release = () => { if (!released) { released = true; worker.inFlight-- } }
         try {
           const response = await fetch(url, { method: request.method, headers,
             body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,

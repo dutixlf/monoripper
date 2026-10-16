@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.obsidian/
+.env
+.env.*
+!.env.example
+.monoripper/
+coverage/
+*.tgz

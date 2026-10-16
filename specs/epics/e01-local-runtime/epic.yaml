@@ -1,0 +1,32 @@
+id: e01
+title: Local contexts and lifecycle
+status: in_progress
+planning_status: approved_to_start
+purpose: Deliver a working path from a selected Elysia context to managed processes inside a container.
+depends_on: []
+stories:
+  - id: e01s01
+    title: HTTP from a selected context
+    delta: ADDED
+    bcps: 8
+    status: awaiting_uat
+    spec: e01s01-selected-context.md
+    tasks: e01s01-tasks.yaml
+  - id: e01s02
+    title: gRPC control and recovery
+    delta: ADDED
+    bcps: 8
+    status: failing
+    spec: e01s02-control-lifecycle.md
+    tasks: e01s02-tasks.yaml
+  - id: e01s03
+    title: Container lifecycle
+    delta: ADDED
+    bcps: 3
+    status: failing
+    spec: e01s03-container.md
+    tasks: e01s03-tasks.yaml
+constraints:
+  - The user authorized implementation. Record API changes in documentation and tests.
+  - Verify Bun and gRPC/Elysia compatibility before implementing the complete lifecycle.
+  - Planned checks are not completed verification.

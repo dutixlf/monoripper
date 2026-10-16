@@ -1,0 +1,63 @@
+schema_version: 1
+active_flow: verify_work
+active_epic_id: e01
+active_story_id: e01s01
+phase: verify
+implementation_started: true
+vcs:
+  kind: none
+  note: Monoripper Git repository is not initialized. User .obsidian files are preserved. No commits or publications exist.
+confirmed_decisions:
+  - One npm package, Elysia, and Bun.
+  - Import linting and explicit errors are sufficient for the prototype.
+  - gRPC control, selected contexts, replicas, and configuration persistence.
+  - Container operation, immutable releases, and a private registry instead of Git in the runtime.
+  - The full roadmap includes multiple nodes and bounded autoscaling.
+  - One Bun worker process per context replica. Module isolation takes priority over runtime memory savings.
+  - Explicit route owns, one controller, and one ingress.
+  - One application artifact with independent updates of selected contexts.
+  - HTTP first. WebSocket/SSE and HA are outside the initial prototype.
+  - Registry mode in the same package, explicit HTTP SDK between contexts, and a phased roadmap.
+  - User config files. Different installations/nodes can have different settings.
+implementation_decisions:
+  - The user authorized implementation and suggested an external backend for tests.
+  - Explicit local TS/JS configuration, with defaults, then config, then explicit CLI overrides.
+  - Application entries resolve relative to the manifest. Runtime configuration is not persistent desired state.
+  - Unknown config options are rejected. Config hot reload is not implemented yet.
+  - Initial replicas are configured locally. Runtime gRPC control is not implemented in e01s01.
+  - At user request, embedded-postgres is test-only. One temporary server serves all replicas.
+  - The full private-backend app and separate tags context use real SQL. Original repositories remain unchanged.
+pending_approval:
+  - User UAT of the local example and feedback on the initial API.
+blockers:
+  - Git-diff security review and RED/GREEN commits are unavailable before VCS initialization.
+environment:
+  bun: 1.3.13
+  bun_path: /nix/store/<hash>-bun-1.3.13/bin/bun
+  bootstrap: nix shell nixpkgs#bun
+  elysia: 1.4.30
+  grpc_js: 1.14.6
+  typescript: 5.9.3
+  lockfile: bun.lock
+  embedded_postgres: 18.4.0-beta.17
+  native_postgresql: '18.4'
+  private-backend_fixture_lock: integration/private-backend-runtime.bun.lock
+validation:
+  documentation_structure: passed
+  yaml_parse_and_cross_references: passed
+  planned_verify_shell_syntax: passed
+  runtime_tests: 28_pass_0_fail
+  typecheck: passed
+  installed_package_smoke: passed
+  private-backend_shared_modules_integration: passed
+  full_private-backend_backend: passed_health_openapi_and_crud
+  sliced_private-backend_tags: passed_real_postgres_two_replicas
+  embedded_postgres_cleanup: passed_callback_failure
+  manual_uat: pending
+  bundled_plan_validator: blocked_missing_pyyaml
+  evidence: specs/verifications/embedded-postgres-verify.yaml
+handoff:
+  next_skill: verify-work
+  next_action: Show the local example for UAT. Next implementation slice is e01s02 with gRPC control and durable desired state.
+  entrypoint: README.md
+  gate: e01s01_automated_passed_user_uat_pending

@@ -1,0 +1,63 @@
+story_id: e01s01
+status: automated_passed_awaiting_user_uat
+historical_record: true
+followup: embedded-postgres-verify.yaml
+session_date: '2026-10-16'
+environment:
+  platform: Linux x86_64, NixOS
+  bun: 1.3.13
+  bun_path: /nix/store/<hash>-bun-1.3.13/bin/bun
+  elysia: 1.4.30
+  grpc_js: 1.14.6
+  typescript: 5.9.3
+terminal_verdict:
+  command: bun test tests
+  exit_code: 0
+  stdout_stderr_file: e01s01-tests.log
+  tests_passed: 27
+  tests_failed: 0
+  expect_calls: 100
+  note: One continuous final run. The log does not combine different attempts.
+phases:
+  install:
+    command: bun install --frozen-lockfile
+    passed: true
+  typecheck:
+    command: bun run typecheck
+    passed: true
+  build_and_package:
+    command: bun run test:package
+    passed: true
+    details: Installed the package from a local npm archive into a separate temporary consumer. Worker and bin run without the source checkout.
+  architecture_lint:
+    command: bun src/cli.ts check --app examples/local/app.ts
+    passed: true
+  task_verifies:
+    passed: true
+    note: All four exact e01s01-tasks.yaml verification commands exited 0 after the final run.
+  cli_lifecycle:
+    passed: true
+    details: The source CLI loads explicit config, serves HTTP, and stops workers on SIGTERM. Package bin help was checked separately.
+  external_backend:
+    command: bun run test:private-backend ~/.cache/monoripper/fixtures/private-backend
+    passed: true
+    repository: <private-repository>
+    commit: <redacted>
+    scope: Real shared/pagination.ts and shared/legacy-api-error.ts through two separate replicas.
+    upstream_modified: false
+    full_backend_started: false
+    excluded: [PostgreSQL, OAuth, workspace_packages, full_application]
+  self_review:
+    file: e01s01-self-review.md
+    independent_review: false
+  manual:
+    status: awaiting_user
+    passed: null
+    command: bun src/cli.ts serve --config examples/local/monoripper.config.ts
+    expected: /api/user/status responds with a worker PID, /api/billing/status returns 503, and Ctrl-C stops processes.
+limitations:
+  - No production control gRPC API. The compatibility test checks transport, not implemented control behavior.
+  - No persistent state, restart supervisor, registry, rollout, container checks, or multinode checks.
+  - No npm or registry publication occurred.
+  - Monoripper has no Git repository yet. No RED/GREEN commits or git-diff security review exist.
+  - NFR thresholds are unspecified. No load metrics or production readiness are claimed.

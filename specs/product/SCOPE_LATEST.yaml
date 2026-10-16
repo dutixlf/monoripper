@@ -1,0 +1,96 @@
+schema_version: 1
+status: draft
+feature_name: Monoripper
+core_value: >-
+  Run parts of an Elysia monolith as managed contexts and update them
+  without introducing a separate container platform.
+summary: >-
+  One npm package provides application integration, context control,
+  replication, balancing, a release registry, and CLI. The application keeps a shared
+  codebase but can run selected contexts in separate processes.
+  The full plan includes multiple nodes and bounded autoscaling.
+  Implementation starts with one node and expands through vertical slices.
+users:
+  - Developers of small Elysia backend projects.
+  - Small teams that need to scale and update parts of a monolith.
+in_scope:
+  - id: R01
+    outcome: One package and explicit Elysia context declarations with shared library logic.
+    stories: [e01s01]
+  - id: R02
+    outcome: Selective startup and diagnostics for context boundary violations.
+    stories: [e01s01]
+  - id: R03
+    outcome: Replica count management, enablement, and disablement through gRPC.
+    stories: [e01s02]
+  - id: R04
+    outcome: Balancing across ready replicas and controlled request completion.
+    stories: [e01s02]
+  - id: R05
+    outcome: Desired configuration recovery after restart.
+    stories: [e01s02]
+  - id: R06
+    outcome: Container operation without access to the container engine.
+    stories: [e01s03]
+  - id: R07
+    outcome: Packaging and publication of reproducibly identified releases to a private registry.
+    stories: [e02s01, e02s02]
+  - id: R08
+    outcome: Selected context updates with continued service and rollback to a retained release.
+    stories: [e02s03]
+  - id: R09
+    outcome: Publication and deployment integration with ordinary CI/CD.
+    stories: [e02s03]
+  - id: R10
+    outcome: Operation on multiple preconnected nodes with request metadata propagation.
+    stories: [e03s01, e03s02]
+  - id: R11
+    outcome: Bounded autoscaling within available resources.
+    stories: [e03s03]
+out_of_scope:
+  - item: Automatic JS memory snapshots and migration of running transactions.
+    reason: This is not a universally implementable contract. Business data lives separately.
+  - item: VPS provisioning and cloud infrastructure management.
+    reason: Deferred. Scaling uses already connected machines.
+  - item: Complete replacement of all Kubernetes features.
+    reason: The product solves a narrow small-application problem, not a general cluster problem.
+  - item: Multiple active controllers and custom distributed consensus.
+    reason: Deferred. The first prototype has one configuration owner.
+  - item: Transparent conversion of arbitrary local functions into RPC.
+    reason: Network failures require an explicit call contract.
+  - item: Automatic business data and database migration rollback.
+    reason: The application and a separate migration process own this responsibility.
+  - item: Other web frameworks and runtimes in the first version.
+    reason: Deferred until the model is validated on Elysia and Bun.
+  - item: WebSocket, SSE, and endless streams in the first prototype.
+    reason: Deferred. Long-lived connections need a separate contract.
+  - item: Safe multi-tenant execution of untrusted user applications.
+    reason: Processes inside a container are not a sandbox for hostile code.
+  - item: Exactly-once guarantees for background jobs and external operations.
+    reason: Not promised. The application owns idempotency and coordination.
+  - item: Git integration in release management.
+    reason: Rejected during discussion. CI delivers a built release to the registry.
+constraints:
+  distribution: One npm package. Name availability is not verified yet.
+  first_framework: Elysia
+  first_runtime: Bun
+  deployment: Linux and containers. Other operating systems are outside the first verified matrix.
+  architecture_policy: Import linting and explicit errors are sufficient for the prototype.
+  secrets: Exclude from source, releases, manifests, and logs.
+  planning: All new documented APIs are provisional. Implementation does not exist yet.
+  budget: Not specified. Do not promise timelines or performance without measurements.
+success_criteria:
+  - Starting user does not execute billing or its resources.
+  - Requests pass through the gateway to a separate Elysia process with middleware preserved.
+  - A gRPC command changes replica count. Repeats create no extra processes.
+  - Known disabled contexts return 503. Unknown routes return 404.
+  - Restart restores desired contexts and replica counts, not old process memory.
+  - New-version failures before the switch do not stop the old version.
+  - Successful updates send new requests to the new version and finish old requests on the old version.
+  - The same published digest deploys to staging and production without rebuild.
+  - Two containers on different nodes can serve contexts through one public ingress.
+  - Autoscaling stays within configured replica and placement limits.
+references:
+  - ../README.md
+  - ../tech-architecture/tech-stack.md
+  - ../ROADMAP.md

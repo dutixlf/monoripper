@@ -1,0 +1,30 @@
+story_id: e01s02
+title: gRPC control and recovery
+spec: e01s02-control-lifecycle.md
+status: failing
+bcps: 8
+tasks:
+  - id: 1
+    description: Implement serialized desired-state updates, atomic snapshots, durable operations, and idempotency/recovery.
+    verify: test -f tests/e2e/control-state.test.ts && bun test tests/e2e/control-state.test.ts
+    risk: P0
+    status: failing
+    allure:
+      severity: critical
+      categories: [state, recovery]
+  - id: 2
+    description: Balance ready replicas, drain requests, and recover failed workers within a finite budget.
+    verify: test -f tests/e2e/worker-recovery.test.ts && bun test tests/e2e/worker-recovery.test.ts
+    risk: P0
+    status: failing
+    allure:
+      severity: critical
+      categories: [lifecycle, faults]
+  - id: 3
+    description: Connect gRPC authorization, versioned SetContext, operations, and status/scale CLI without error or secret leaks.
+    verify: test -f tests/e2e/control-lifecycle.test.ts && bun test tests/e2e/control-lifecycle.test.ts
+    risk: P0
+    status: failing
+    allure:
+      severity: critical
+      categories: [grpc, Security Review]

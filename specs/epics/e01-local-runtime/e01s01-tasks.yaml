@@ -1,0 +1,46 @@
+story_id: e01s01
+title: HTTP from a selected context
+spec: e01s01-selected-context.md
+status: passing
+bcps: 8
+tasks:
+  - id: 1
+    description: Configure the npm package with the Bun toolchain and verify gRPC/Elysia compatibility before pinning the adapter.
+    verify: test -f tests/compat/grpc-bun.test.ts && test -f tests/compat/elysia.test.ts && bun test tests/compat
+    risk: P0
+    status: passing
+    allure:
+      severity: critical
+      categories: [compatibility, runtime]
+  - id: 2
+    description: Implement declarations, a lazy worker, and resources. Do not import disabled contexts.
+    verify: test -f tests/e2e/selected-context.test.ts && bun test tests/e2e/selected-context.test.ts
+    risk: P0
+    status: passing
+    allure:
+      severity: critical
+      categories: [integration, lifecycle]
+  - id: 3
+    description: Check the import graph, aliases, re-exports, and unsupported computed imports with diagnostics.
+    verify: test -f tests/unit/import-boundaries.test.ts && bun test tests/unit/import-boundaries.test.ts
+    risk: P1
+    status: passing
+    allure:
+      severity: high
+      categories: [architecture, unit]
+  - id: 4
+    description: Proxy HTTP through ownership while preserving Elysia middleware, errors, cookies, and body lifetime.
+    verify: test -f tests/e2e/http-semantics.test.ts && bun test tests/e2e/http-semantics.test.ts
+    risk: P0
+    status: passing
+    allure:
+      severity: critical
+      categories: [integration, http]
+  - id: 5
+    description: Verify the real backend and separate tags context with real migrations/CRUD on shared embedded PostgreSQL 18.
+    verify: test -f scripts/test-private-backend-postgres.ts && bun run test:private-backend:postgres "$BACKEND_BACKEND_DIR" "$BACKEND_PACKAGES_DIR"
+    risk: P0
+    status: passing
+    allure:
+      severity: critical
+      categories: [integration, postgres, external-backend]

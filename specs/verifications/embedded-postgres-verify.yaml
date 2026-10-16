@@ -1,0 +1,76 @@
+story_id: e01s01
+followup: Real private-backend backend on embedded PostgreSQL
+status: automated_passed_awaiting_user_uat
+session_date: '2026-10-16'
+production_runtime_changed: false
+package:
+  name: embedded-postgres
+  version: 18.4.0-beta.17
+  native_postgresql: '18.4'
+  role: dev_dependency_only
+  trusted_postinstall: '@embedded-postgres/linux-x64: scripts/hydrate-symlinks.js'
+  system_service_changed: false
+  root_or_os_user_creation: false
+  nixos_binary_result: Native binaries work with existing nix-ld. System configuration is unchanged.
+terminal_verdict:
+  command: bun test tests
+  exit_code: 0
+  stdout_stderr_file: embedded-postgres-tests.log
+  passed: 28
+  failed: 0
+  expect_calls: 107
+  note: One continuous final run, not a combination of different attempts.
+integration:
+  command: 'bun run test:private-backend:postgres "$BACKEND_BACKEND_DIR" "$BACKEND_PACKAGES_DIR"'
+  exit_code: 0
+  stdout_stderr_file: private-backend-postgres.log
+  dependency_lock: integration/private-backend-runtime.bun.lock
+  install: frozen lockfile, install scripts disabled, runtime-only manifests
+  source_mode: Git HEAD snapshots; uncommitted changes and .env excluded
+  backend_commit: <redacted>
+  packages:
+    <redacted-package>: <redacted>
+    <redacted-package>: <redacted>
+    <redacted-package>: <redacted>
+    <private-package>: <redacted>
+    <redacted-package>: <redacted>
+  migrations_applied: 12
+  migration_method: Unchanged migration.sql files applied sequentially to a new database, not the production drizzle-kit runner.
+  database_servers: 1
+  full_app_replicas: 2
+  sliced_tags_replicas: 2
+  modes_sequential: true
+  verified:
+    - Complete src/app.ts loaded as an Elysia plugin without rewriting backend source.
+    - Root Hello World, real /health with PostgreSQL, CORS, and OpenAPI with auth/tags routes.
+    - Unauthorized writes return 401 and create no PostgreSQL row.
+    - Authorized create/read/update/delete execute real controller/service/Drizzle/SQL.
+    - Writer and reader PIDs differ and belong to runtime.status workers.
+    - Duplicate slugs return 409. size=101 returns 422.
+    - Soft deletion hides the row from the API but preserves deleted_at in the real database.
+    - The tags router runs as a separate context. reports returns 503 and its bootstrap marker is absent.
+    - Two soft-deleted rows persist in one database between full/sliced phases.
+    - Worker PIDs no longer exist after stop.
+    - The PostgreSQL compatibility test checks postmaster termination and private data directory removal after callback failure.
+  original_repositories_modified: false
+  no_database_or_business_logic_mocks: true
+fixture_manifest_overlay:
+  removed: [devDependencies, scripts]
+  production_dependencies_replaced: false
+  reason: Upstream <private-package> dev metadata references unavailable gql-tada. Bun resolves it even with --production.
+  original_files_modified: false
+other_gates:
+  frozen_project_install: passed
+  typecheck: passed
+  existing_fast_private-backend_smoke: passed
+  installed_npm_archive: passed
+  postgres_in_consumer_runtime: absent_verified
+  package_published: false
+limitations:
+  - Monoripper replaces backend src/index.ts bootstrap. The HTTP app and routers remain real.
+  - Real OAuth providers, external providers, sync jobs, and all domain flows are not verified.
+  - Upstream lint/typecheck/build tooling was not run. Disposable manifests contain runtime dependencies only.
+  - The test database is ephemeral, not a new Monoripper desired-state store.
+  - PostgreSQL is not created per replica. Workers own clients. The fixture owns the shared server.
+  - The native matrix covers only Linux x64, non-root, Bun 1.3.13. This is not a production PostgreSQL deployment.
+  - The existing backend is not automatically certified against all import boundaries. Tests verify runtime composition.

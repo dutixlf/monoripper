@@ -1,0 +1,24 @@
+id: e02
+title: Registry and version updates
+status: planned
+planning_status: roadmap_only
+purpose: Deliver built artifacts and update selected contexts without modifying live files.
+depends_on: [e01]
+reference: ../../ROADMAP.md
+stories:
+  - id: e02s01
+    title: Portable release
+    delta: ADDED
+    bcps: 5
+    status: planned
+  - id: e02s02
+    title: Private registry
+    delta: ADDED
+    bcps: 8
+    status: planned
+  - id: e02s03
+    title: Deploy, rollback, and CI/CD
+    delta: ADDED
+    bcps: 8
+    status: planned
+implementation_gate: After e01, detail story specs/tasks and pass the consistency check.

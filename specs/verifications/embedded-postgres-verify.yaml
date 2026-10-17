@@ -1,5 +1,6 @@
 story_id: e01s01
-followup: Real private-backend backend on embedded PostgreSQL
+followup: Historical external backend on embedded PostgreSQL
+historical_record: true
 status: automated_passed_awaiting_user_uat
 session_date: '2026-10-16'
 production_runtime_changed: false
@@ -21,11 +22,12 @@ terminal_verdict:
   expect_calls: 107
   note: One continuous final run, not a combination of different attempts.
 integration:
-  command: 'bun run test:private-backend:postgres "$BACKEND_BACKEND_DIR" "$BACKEND_PACKAGES_DIR"'
+  command: Retired external PostgreSQL harness
+  replacement: bun run test:elysia:postgres
+  note: This records the original external-source run, not a run of the replacement example. Its fixture lockfile was removed.
   exit_code: 0
-  stdout_stderr_file: private-backend-postgres.log
-  dependency_lock: integration/private-backend-runtime.bun.lock
-  install: frozen lockfile, install scripts disabled, runtime-only manifests
+  stdout_stderr_file: external-postgres.log
+  install: Historical frozen lockfile, install scripts disabled, runtime-only manifests
   source_mode: Git HEAD snapshots; uncommitted changes and .env excluded
   backend_commit: <redacted>
   packages:
@@ -62,7 +64,7 @@ fixture_manifest_overlay:
 other_gates:
   frozen_project_install: passed
   typecheck: passed
-  existing_fast_private-backend_smoke: passed
+  historical_external_smoke: passed
   installed_npm_archive: passed
   postgres_in_consumer_runtime: absent_verified
   package_published: false

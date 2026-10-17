@@ -37,7 +37,7 @@ Scope: the entire local-control diff from 6100bad and current regression fixes b
 - BUG-002: invalid Connection tokens no longer throw during header forwarding.
   The request lease starts only after URL/headers/deadline preparation. Invalid HTTP leaves no phantom inFlight count.
 - No new dependencies, shell commands, auth bypasses, or broader network exposure.
-- The full regression suite, installed-package smoke, and real private-backend/PostgreSQL checks passed again.
+- The full regression suite, installed-package smoke, and historical external-backend/PostgreSQL checks passed again.
 - This is another self-review, not an independent audit. Evidence: [pre-main verify](../verifications/pre-main-verify.yaml).
 
 ## Landing workflow review — 2026-10-16
@@ -68,7 +68,7 @@ Scope: container feature diff from b5bb5a3, including BUG-003 startup cancellati
   and permits the digest-pinned unsigned Bun source plus local build outputs on otherwise unconfigured engines.
 - Commands use argument arrays and unique test-owned resource names. Cleanup is checked through command exit status.
 - No new npm dependencies, plaintext remote control, registry endpoint or production deployment.
-- All 49 native tests, package smoke, 11 landing regressions, real rootless suites and real private-backend/PostgreSQL passed.
+- All 49 native tests, package smoke, 11 landing regressions, real rootless suites and historical external-backend/PostgreSQL checks passed.
 
 No unresolved concrete HIGH/CRITICAL findings were identified in this self-review.
 Independent review, user UAT, signed-image provenance, load testing and production hardening are not claimed.
@@ -91,4 +91,5 @@ This is not security certification or a claim of production readiness.
 - e01s02 has no release provenance/registry. Registry security remains a separate stage.
 
 Evidence: [verify record](../verifications/e01s02-verify.yaml).
-Checks: `bun run typecheck`, `bun test tests`, `bun run test:package`, `bun run test:private-backend:postgres <backend> <packages>`.
+Current checks: `bun run typecheck`, `bun test tests`, `bun run test:package`, `bun run test:elysia`, `bun run test:elysia:postgres`.
+The external integration results above are historical, not evidence for the replacement Elysia examples.

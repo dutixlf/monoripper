@@ -38,10 +38,13 @@ checks:
     result: passed
     evidence: pre-main-package.log
     scope: Bundled worker and protobuf control in clean npm archive consumer; native PostgreSQL not shipped.
-  private-backend_postgres:
-    command: bun run test:private-backend:postgres <backend> <packages>
+  external_postgres:
+    historical_record: true
+    command: Retired external PostgreSQL harness
+    replacement: bun run test:elysia:postgres
+    note: Historical external-source run, not evidence for the replacement example.
     result: passed
-    evidence: pre-main-private-backend.log
+    evidence: pre-main-external-postgres.log
     backend_commit: <redacted>
     scope: PostgreSQL 18, 12 migrations, full backend CRUD, gRPC 1-to-3, kill/recover, restart/restore, disable, cleanup.
   docs_structure: passed

@@ -53,10 +53,13 @@ checks:
       - Hard kill exits 137 without orphan workers. Recreation preserves disabled state and idempotent retry identity.
       - SIGTERM during deterministically blocked PID-1 startup cancels workers, closes resources and exits 0 without readiness.
     cleanup: Test-owned containers, volumes, secrets and image tags removed. Normal base/build caches retained. No global prune.
-  private-backend:
-    command: bun run test:private-backend:postgres <backend> <packages>
+  external_postgres:
+    historical_record: true
+    command: Retired external PostgreSQL harness
+    replacement: bun run test:elysia:postgres
+    note: Historical external-source run, not evidence for the replacement example.
     result: passed
-    evidence: e01s03-private-backend.log
+    evidence: e01s03-external-postgres.log
     backend_commit: <redacted>
     scope: Real PostgreSQL 18, 12 migrations, full backend CRUD, gRPC scale/recovery/restore/disable and cleanup outside containers.
 regressions:

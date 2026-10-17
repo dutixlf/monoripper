@@ -75,5 +75,5 @@ Release updates, multiple controllers, distributed consensus, and request migrat
 
 ## 20. Gate and handoff
 e01s03 receives a verified local stop/recovery contract. All task verification commands pass. User UAT is not confirmed yet.
-Evidence: [e01s02-verify.yaml](../../verifications/e01s02-verify.yaml). The full package and private-backend/PostgreSQL passed verification.
+Evidence: [e01s02-verify.yaml](../../verifications/e01s02-verify.yaml). The full package and historical external-backend/PostgreSQL checks passed verification. The current replacement is `bun run test:elysia:postgres`.
 Structure check: `python3 scripts/check-specs.py`.

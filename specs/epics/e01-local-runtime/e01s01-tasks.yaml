@@ -37,10 +37,10 @@ tasks:
       severity: critical
       categories: [integration, http]
   - id: 5
-    description: Verify the real backend and separate tags context with real migrations/CRUD on shared embedded PostgreSQL 18.
-    verify: test -f scripts/test-private-backend-postgres.ts && bun run test:private-backend:postgres "$BACKEND_BACKEND_DIR" "$BACKEND_PACKAGES_DIR"
+    description: Verify the full Elysia example and separate tags context with real migrations/CRUD on shared embedded PostgreSQL 18.
+    verify: test -f scripts/test-elysia-postgres.ts && bun run test:elysia:postgres
     risk: P0
     status: passing
     allure:
       severity: critical
-      categories: [integration, postgres, external-backend]
+      categories: [integration, postgres, elysia]

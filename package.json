@@ -23,8 +23,8 @@
     "typecheck": "tsc --noEmit",
     "build": "rm -rf dist && bun build src/index.ts src/cli.ts src/worker.ts --target bun --external elysia --external @grpc/grpc-js --external @grpc/proto-loader --splitting --outdir dist --entry-naming '[name].js' --chunk-naming 'chunk-[hash].js' && cp src/control.proto dist/control.proto && tsc -p tsconfig.build.json",
     "check:specs": "python3 scripts/check-specs.py",
-    "test:private-backend": "bun scripts/test-private-backend.ts",
-    "test:private-backend:postgres": "bun scripts/test-private-backend-postgres.ts",
+    "test:elysia": "bun scripts/test-elysia.ts",
+    "test:elysia:postgres": "bun scripts/test-elysia-postgres.ts",
     "test:package": "bun scripts/test-package.ts",
     "test:landing": "bash scripts/test-land-branch.sh",
     "test:container": "bash tests/container/boundaries.sh && bash tests/container/lifecycle.sh"

@@ -1,0 +1,185 @@
+$ tsc --noEmit
+bun test v1.3.13 (bf2e2cec)
+
+tests/compat/grpc-bun.test.ts:
+(pass) Bun runs real gRPC server/client, metadata, errors, deadlines and shutdown [98.00ms]
+
+tests/compat/elysia.test.ts:
+(pass) Elysia 1.4 listen preserves plugins, schemas, hooks, route metadata and stop [27.00ms]
+
+tests/compat/embedded-postgres.test.ts:
+(pass) embedded PostgreSQL 18 runs real SQL and is removed after a failed test callback [2869.04ms]
+
+tests/e2e/selected-context.test.ts:
+(pass) only selected context runs in a separate process; resources and hooks close in order [102.00ms]
+(pass) worker create failure cleans resources and does not leave a live process [65.00ms]
+(pass) worker ownership failure cleans resources and does not leave a live process [68.00ms]
+(pass) worker start-hook failure cleans resources and does not leave a live process [89.00ms]
+(pass) worker timeout failure cleans resources and does not leave a live process [308.00ms]
+(pass) worker stop failure cleans resources and does not leave a live process [73.00ms]
+
+tests/e2e/cli.test.ts:
+(pass) CLI checks imports, serves an explicit local config, and stops its workers on SIGTERM [396.01ms]
+
+tests/e2e/control-crash.test.ts:
+(pass) SIGKILL releases writer lock; accepted operation replays and keeps its requestId/operationId [1343.02ms]
+
+tests/e2e/control-lifecycle.test.ts:
+(pass) protobuf gRPC authorizes, scales, replays, disables and exposes no admin credential to workers/state [751.01ms]
+(pass) remote plaintext bind and missing credentials fail before creating controller state [1.00ms]
+
+tests/e2e/control-replay-rollback.test.ts:
+(pass) failed replayed growth restores the previous live replica count, not only desired state [374.01ms]
+
+tests/e2e/control-state.test.ts:
+(pass) accepted state is durable, replay idempotent, revision guarded and restored instead of initial [559.01ms]
+(pass) failed growth rolls desired count back without leaking private startup errors [158.00ms]
+(pass) corrupt persistent state refuses startup without replacing data [2.00ms]
+
+tests/e2e/http-semantics.test.ts:
+(pass) proxy preserves body, params, query, schemas and middleware, strips private/hop headers [26.00ms]
+(pass) invalid Connection tokens cannot throw during forwarding or pin a worker lease [1.00ms]
+(pass) cookies, status and redirect are preserved without following the redirect [3.00ms]
+(pass) compressed bytes and encoding match [1.00ms]
+(pass) unhandled application exceptions do not expose private messages [1.00ms]
+(pass) ready replicas receive round-robin traffic and timeout does not retry [107.00ms]
+(pass) worker cannot be called directly without its private credential [2.00ms]
+(pass) oversized uploads are rejected by the configured HTTP boundary
+(pass) ambiguous encoded paths are rejected before ownership matching [1.00ms]
+
+tests/e2e/worker-recovery.test.ts:
+(pass) dead worker is replaced within a finite restart budget [259.00ms]
+(pass) flapping workers stop restarting and expose budget exhaustion [583.01ms]
+(pass) scale-down waits for the full response body, not only headers [282.00ms]
+(pass) runtime shutdown preserves an active finite response body [280.00ms]
+error: Unable to connect. Is the computer able to access the url?
+  path: "http://127.0.0.1:42295/api/hang",
+ errno: 0,
+  code: "ConnectionRefused"
+
+(pass) drain deadline kills a stuck body but never re-enables a disabled context [193.00ms]
+
+tests/e2e/startup-cancellation.test.ts:
+(pass) an already cancelled startup does not create persistent controller state [1.00ms]
+(pass) startup cancellation closes resources, releases the writer and exposes cleanup failure=false [182.00ms]
+(pass) startup cancellation closes resources, releases the writer and exposes cleanup failure=true [158.00ms]
+(pass) CLI SIGTERM during startup closes workers before exiting successfully [130.00ms]
+
+tests/unit/import-boundaries.test.ts:
+(pass) shared utilities are allowed and modules are parsed, never executed [172.00ms]
+(pass) cross-context aliases resolve against tsconfig and report file/line [19.00ms]
+(pass) shared barrel cannot hide a dependency on a context [10.00ms]
+(pass) literal dynamic import, require and type imports follow the same boundary [39.00ms]
+(pass) computed imports and unresolved local imports fail closed [2.00ms]
+
+tests/unit/config.test.ts:
+(pass) configurations are local, entries resolve against manifest, overrides do not mutate defaults [4.00ms]
+(pass) unknown config options fail explicitly instead of silently doing nothing [1.00ms]
+
+tests/unit/ownership.test.ts:
+(pass) ownership overlap rejects before starting workers
+(pass) different methods on same path have separate owners; prefix respects path boundary [3.00ms]
+(pass) invalid paths, method rules and numeric config reject explicitly [1.00ms]
+
+tests/unit/state-store.test.ts:
+(pass) native exclusive writer, immutable reads, serialized durable writes and recovery [32.00ms]
+(pass) corrupt state is not silently reset and the kernel lock is released after rejection [7.00ms]
+(pass) write failure rejects acceptance and makes subsequent mutations fail closed [11.00ms]
+(pass) invalid mutation cannot replace the last valid durable snapshot [10.00ms]
+
+ 49 pass
+ 0 fail
+ 208 expect() calls
+Ran 49 tests across 16 files. [10.32s]
+$ bun scripts/test-elysia.ts
+PASS: local Elysia pagination, validation and errors in two isolated replicas; disabled context not imported
+$ bun scripts/test-elysia-postgres.ts
+Applied local Elysia example migration on PostgreSQL 18
+PASS: full Elysia app in two replicas: health, authenticated CRUD, cross-replica DB reads and soft delete
+PASS: Elysia tags gRPC 1→3 replicas, worker SIGKILL recovery, controller restart restores 3, disable→503; shared PostgreSQL data preserved
+PASS: embedded PostgreSQL and temporary state cleaned; no external checkouts or production services used
+Import boundaries: PASS
+$ bun scripts/test-package.ts
+$ rm -rf dist && bun build src/index.ts src/cli.ts src/worker.ts --target bun --external elysia --external @grpc/grpc-js --external @grpc/proto-loader --splitting --outdir dist --entry-naming '[name].js' --chunk-naming 'chunk-[hash].js' && cp src/control.proto dist/control.proto && tsc -p tsconfig.build.json
+Bundled 17 modules in 6ms
+
+  index.js            0.60 KB    (entry point)
+  chunk-a3s4s1df.js   44.62 KB   (chunk)
+  chunk-x75k0qv2.js   4.16 KB    (chunk)
+  chunk-mdnseqsw.js   401 bytes  (chunk)
+  chunk-2c88g3mv.js   499 bytes  (chunk)
+  cli.js              6.13 KB    (entry point)
+  worker.js           5.51 KB    (entry point)
+  chunk-6rpbnycm.js   3.28 KB    (chunk)
+  chunk-vxys6ydp.js   3.13 KB    (chunk)
+
+bun pack v1.3.13 (bf2e2cec)
+
+packed 1.54KB package.json
+packed 14.70KB README.md
+packed 373B dist/check.d.ts
+packed 499B dist/chunk-2c88g3mv.js
+packed 3.28KB dist/chunk-6rpbnycm.js
+packed 44.62KB dist/chunk-a3s4s1df.js
+packed 401B dist/chunk-mdnseqsw.js
+packed 3.13KB dist/chunk-vxys6ydp.js
+packed 4.16KB dist/chunk-x75k0qv2.js
+packed 30B dist/cli.d.ts
+packed 6.13KB dist/cli.js
+packed 0.60KB dist/config.d.ts
+packed 0.64KB dist/control-client.d.ts
+packed 112B dist/control-protocol.d.ts
+packed 1.22KB dist/control-types.d.ts
+packed 1.29KB dist/control.proto
+packed 0.91KB dist/controller.d.ts
+packed 2.77KB dist/definitions.d.ts
+packed 288B dist/grpc-server.d.ts
+packed 298B dist/http.d.ts
+packed 0.59KB dist/index.d.ts
+packed 0.60KB dist/index.js
+packed 0.54KB dist/ownership.d.ts
+packed 0.53KB dist/process-worker.d.ts
+packed 0.57KB dist/runtime.d.ts
+packed 0.81KB dist/state-store.d.ts
+packed 0.76KB dist/worker-pool.d.ts
+packed 213B dist/worker.d.ts
+packed 5.51KB dist/worker.js
+
+/tmp/monoripper-package-53r2Vz/monoripper.tgz
+
+Total files: 29
+Shasum: 4c4569d54efb254f7c356296b94d6eaab07c6fbf
+Integrity: sha512-k2Ag/2QPVTqxQ[...]WFXk7d493l6jA==
+Unpacked size: 97.11KB
+Packed size: 28.43KB
+bun install v1.3.13 (bf2e2cec)
+Resolving dependencies
+Resolved, downloaded and extracted [52]
+Saved lockfile
+
++ monoripper@./monoripper.tgz
+
+52 packages installed [3.42s]
+
+Blocked 1 postinstall. Run `bun pm untrusted` for details.
+PASS: installed npm archive starts its bundled worker outside the source checkout
+monoripper serve --config <file> [--host <host>] [--port <port>]
+monoripper check --app <manifest>
+monoripper status|scale|operation --controller <loopback:port> --project <name> [--environment <name>]
+scale --context <name> --replicas <count> [--wait]
+operation --id <operationId> [--wait]
+$ bash scripts/test-land-branch.sh
+PASS: bootstrap fast-forward landing
+PASS: existing fast-forward landing
+PASS: dirty working tree refused
+PASS: failing verification refused
+PASS: verification cannot publish a modified working tree
+PASS: divergent local main preserved
+PASS: divergent remote main preserved
+PASS: unexpected push destination refused
+PASS: remote lookup failure fails closed
+PASS: feature branch conflict atomically prevents updating main
+PASS: rejected atomic push retains all commits and leaves origin unchanged
+$ python3 scripts/check-specs.py
+PASS: 18 Markdown files, local links, story sections and design markers
+Documentation structure only; this command does not execute runtime tests.

@@ -30,8 +30,9 @@ run separately and again during the real landing invocation.
 - Server-rejected push preserves all commits and leaves origin unchanged.
 
 `bash -n scripts/land-branch.sh scripts/test-land-branch.sh`: passed.
-`bun run test:private-backend:postgres <backend> <packages>`: passed again, PostgreSQL 18,
+The retired external PostgreSQL harness passed again: PostgreSQL 18,
 12 migrations, full backend CRUD and gRPC scale/recovery/restore/disable.
+This is historical evidence. The current replacement command is `bun run test:elysia:postgres`.
 
 Application regression evidence remains in [pre-main-verify.yaml](pre-main-verify.yaml).
 Landing does not publish npm packages, deploy applications or claim CI success.

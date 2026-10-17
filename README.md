@@ -213,40 +213,29 @@ bun run test:container
 This opt-in suite requires real rootless Podman. It checks boundaries, scale/recovery, recreation, hard kill and response drain.
 It does not silently skip when the engine is unavailable. Remote TLS control and registry bootstrap remain future work.
 
-## External backend and embedded PostgreSQL
+## Elysia examples and embedded PostgreSQL
 
 ```sh
-git clone --depth 1 <private-repository> /tmp/private-backend-backend
-mkdir -p /tmp/private-backend-packages
-for p in <private-packages>; do
-  git clone --depth 1 "<private-repository>" "/tmp/private-backend-packages/$p"
-done
-bun run test:private-backend:postgres /tmp/private-backend-backend /tmp/private-backend-packages
+bun run test:elysia
+bun run test:elysia:postgres
 ```
 
-This harness:
+Both commands use [self-contained Elysia examples](examples/elysia/README.md). No external checkouts or extra dependency installations are required.
+The database-free check runs pagination, validation and error responses in two isolated replicas.
 
-1. Copies committed HEAD snapshots of the backend and real workspace packages to a separate temporary directory.
-2. Starts `embedded-postgres` 18 on a random loopback port with a new database and generated test credentials.
-3. Applies unchanged `migration.sql` files sequentially to the new database without calling the production migrator.
-4. Runs the complete `src/app.ts` through Monoripper in two processes, with health, CORS, OpenAPI, and real authenticated tags CRUD.
-5. Verifies writes through one replica and reads through another using real PIDs, duplicate 409, validation 422, and soft deletion.
-6. For tags, performs gRPC scaling from 1→3, CRUD, worker SIGKILL/recovery, controller restart restoring three replicas, and disable→503.
-7. Verifies that reports did not load and database rows persist. Stops workers/PostgreSQL and removes private temporary directories.
+The PostgreSQL check:
 
-**One test PostgreSQL server serves all replicas.** Each worker creates a client/pool, not its own database server.
-`embedded-postgres` is a dev dependency, not part of the Monoripper production runtime. `test:package` verifies its absence from the npm consumer.
-The fixture does not use an external `DATABASE_URL` or an existing data directory.
-Original checkouts, uncommitted changes, `.env`, and production services remain unchanged. OAuth and external provider calls are not tested.
+1. Starts `embedded-postgres` 18 on a random loopback port with a new database and generated credentials.
+2. Applies `examples/elysia/migration.sql` and runs the full example in two processes.
+3. Verifies authenticated CRUD, unauthorized writes, cross-replica reads, duplicate 409, validation 422 and soft deletion.
+4. Runs tags as a selected context, scales from 1→3 over gRPC, kills a worker, checks recovery, restarts the controller and verifies saved counts.
+5. Disables tags to get 503 and proves that the disabled reports context was not imported.
+6. Checks stored rows, stops workers/PostgreSQL and removes temporary database and controller state.
 
-Disposable package.json files omit only devDependencies and scripts. Production dependencies and backend source remain real.
-Reason: an upstream package tooling references unavailable `gql-tada`. Bun resolves workspace dev dependencies even with `--production`.
-The test workspace uses pinned lockfile `integration/private-backend-runtime.bun.lock`. Normal runs use frozen installation without install scripts.
-If upstream dependencies change, update the lockfile explicitly with `BACKEND_UPDATE_LOCKFILE=1 bun run test:private-backend:postgres <backend> <packages>`.
-Git is used only for external test snapshots, not the product deployment protocol.
-
-The database-free smoke test remains available. `bun run test:private-backend /tmp/private-backend-backend` checks real shared pagination/error modules only.
-Upstream AGPL code remains external test input and is not included in the published Monoripper package.
+**One test PostgreSQL server serves all replicas.** Each worker owns a connection pool, not a database server.
+`embedded-postgres` is a dev dependency, not part of the production runtime. `test:package` verifies its absence from the npm consumer.
+The fixture does not use an external `DATABASE_URL`, an existing data directory or production services.
+The PostgreSQL command requires a non-root user and the native dependency described under Checks and build.
 
 ## Limitations and next step
 

@@ -19,10 +19,13 @@ checks:
     command: bun run test:package
     result: passed
     scope: A clean npm archive consumer starts its worker and protobuf gRPC status/scale/wait. control.proto is present and embedded-postgres is absent.
-  private-backend_postgres:
-    command: bun run test:private-backend:postgres <backend> <packages>
+  external_postgres:
+    historical_record: true
+    command: Retired external PostgreSQL harness
+    replacement: bun run test:elysia:postgres
+    note: Historical external-source run, not evidence for the replacement example.
     result: passed
-    stdout_stderr_file: e01s02-private-backend.log
+    stdout_stderr_file: e01s02-external-postgres.log
     backend_commit: <redacted>
     steps:
       - Native PostgreSQL 18, 12 real migrations, complete HTTP app/CRUD.

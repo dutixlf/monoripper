@@ -9,7 +9,7 @@ vcs:
   kind: git
   branch: feat/container-lifecycle
   baseline: b5bb5a3
-  remote: git@gitlab.com:akawalive/packages/monoripper.git
+  remote: origin
   note: Remote English main confirmed at b5bb5a3. New container feature starts from that history, without merging legacy local refs.
 confirmed_decisions:
   - One npm package, Elysia, and Bun.
@@ -24,7 +24,7 @@ confirmed_decisions:
   - Registry mode in the same package, explicit HTTP SDK between contexts, and a phased roadmap.
   - User config files. Different installations/nodes can have different settings.
 implementation_decisions:
-  - The user authorized implementation and suggested an external backend for tests.
+  - The user authorized implementation. Integration examples now use repository-owned Elysia code without external checkouts.
   - Explicit local TS/JS configuration, with defaults, then config, then explicit CLI overrides.
   - Application entries resolve relative to the manifest. Runtime configuration is not persistent desired state.
   - Unknown config options are rejected. Config hot reload is not implemented yet.
@@ -32,7 +32,7 @@ implementation_decisions:
   - Persistence uses native Linux flock and atomic JSON. Control is loopback-only with credentials from host env.
   - Worker recovery is bounded. Scale-down covers response bodies. Pending operations replay after controller crashes.
   - At user request, embedded-postgres is test-only. One temporary server serves all replicas.
-  - The full private-backend app and separate tags context use real SQL. Original repositories remain unchanged.
+  - The full Elysia example and separate tags context use real SQL through a shared temporary PostgreSQL server.
   - User approved e01s03 control through engine exec. Loopback gRPC remains private, with remote TLS deferred.
   - Rootless Podman is provided by a transient Nix shell. No NixOS system configuration changes.
   - Programmatic startupSignal and early CLI handlers fix PID-1 startup shutdown. Cleanup failures remain errors.
@@ -51,7 +51,8 @@ environment:
   lockfile: bun.lock
   embedded_postgres: 18.4.0-beta.17
   native_postgresql: '18.4'
-  private-backend_fixture_lock: integration/private-backend-runtime.bun.lock
+  integration_examples: examples/elysia
+  integration_lockfile: bun.lock
 validation:
   documentation_structure: passed
   yaml_parse_and_cross_references: passed
@@ -59,14 +60,15 @@ validation:
   runtime_tests: 49_pass_0_fail
   typecheck: passed
   installed_package_smoke: passed_with_protobuf_control
-  private-backend_shared_modules_integration: passed
-  full_private-backend_backend: passed_health_openapi_and_crud
-  sliced_private-backend_tags: passed_real_postgres_two_replicas
+  elysia_pagination_integration: passed_two_isolated_replicas
+  full_elysia_example: passed_health_and_authenticated_crud
+  sliced_elysia_tags: passed_real_postgres_three_replicas
   embedded_postgres_cleanup: passed_callback_failure
   grpc_auth_scope_and_idempotency: passed
   controller_sigkill_replay: passed
   worker_recovery_budget_and_drain: passed
-  private-backend_grpc_scale_recover_restore_disable: passed
+  elysia_grpc_scale_recover_restore_disable: passed
+  elysia_integration_evidence: specs/verifications/elysia-examples.md
   manual_uat: pending
   bundled_plan_validator: blocked_missing_pyyaml
   evidence: specs/verifications/e01s03-verify.yaml

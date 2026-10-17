@@ -39,9 +39,10 @@ phases:
     passed: true
     details: The source CLI loads explicit config, serves HTTP, and stops workers on SIGTERM. Package bin help was checked separately.
   external_backend:
-    command: bun run test:private-backend ~/.cache/monoripper/fixtures/private-backend
+    command: Retired external backend smoke harness
     passed: true
-    repository: <private-repository>
+    note: Historical external-source check, not an execution of the current Elysia example.
+    replacement: bun run test:elysia
     commit: <redacted>
     scope: Real shared/pagination.ts and shared/legacy-api-error.ts through two separate replicas.
     upstream_modified: false

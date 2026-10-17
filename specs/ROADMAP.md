@@ -25,7 +25,7 @@ Demo: start `user`. Serve `/api/login` from a separate process without importing
 2. Verify gRPC client/server on Bun, including metadata, deadlines, errors, and channel closure.
 3. Implement declarations, a lazy worker runner, an ownership gateway, and an import checker.
 4. Verify hooks, cookies, dynamic routes within prefixes, and startup errors.
-5. Follow-up completed: real private-backend app and separate tags context on embedded PostgreSQL, with real migrations/CRUD across different PIDs.
+5. Verify the full Elysia example and separate tags context on embedded PostgreSQL, with real migrations/CRUD across different PIDs. Run `bun run test:elysia:postgres` without external checkouts.
 
 Verify: `test -f tests/e2e/selected-context.test.ts && bun test tests/e2e/selected-context.test.ts`.
 Also run `test -f tests/compat/grpc-bun.test.ts && bun test tests/compat/grpc-bun.test.ts`.

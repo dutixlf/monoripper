@@ -24,7 +24,7 @@ User HTTP Response or an explicit error. Disabled billing produces no import sid
 - Create resources before ready and close them after startup failure.
 - The linter prohibits direct and shared-mediated imports of other contexts.
 - Elysia middleware and schemas execute in workers. The gateway does not bypass them.
-- ADDED follow-up: verify the real backend and tags context on shared temporary embedded PostgreSQL 18 without database/business mocks.
+- ADDED follow-up: verify the full Elysia example and tags context on shared temporary embedded PostgreSQL 18 without database mocks.
 
 ## 8. Invariants
 Ready only after startup completes. Shared code does not imply shared memory.
@@ -56,8 +56,8 @@ The presence of node:http2 alone is insufficient evidence.
 2. Implement the selected worker and resources → verify: `test -f tests/e2e/selected-context.test.ts && bun test tests/e2e/selected-context.test.ts`.
 3. Add the import checker → verify: `test -f tests/unit/import-boundaries.test.ts && bun test tests/unit/import-boundaries.test.ts`.
 4. Verify gateway and ownership → verify: `test -f tests/e2e/http-semantics.test.ts && bun test tests/e2e/http-semantics.test.ts`.
-5. Verify real private-backend with PostgreSQL → verify: `test -f scripts/test-private-backend-postgres.ts && bun run test:private-backend:postgres "$BACKEND_BACKEND_DIR" "$BACKEND_PACKAGES_DIR"`.
-Supply external source checkout paths explicitly. See the project README for preparation.
+5. Verify the Elysia example with PostgreSQL → verify: `test -f scripts/test-elysia-postgres.ts && bun run test:elysia:postgres`.
+The examples are in `examples/elysia/`. No external source checkouts are required.
 
 ## 16. Test data
 user uses login/register/users. billing uses an import-side-effect sentinel fixture. db uses a counted start/stop fixture.

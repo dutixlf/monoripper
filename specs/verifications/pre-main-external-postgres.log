@@ -1,0 +1,11 @@
+# Historical external-backend run. Original invocation removed with retired fixture; output below is unchanged.
+bun install v1.3.13 (bf2e2cec)
+
++ typescript@5.9.3
+
+116 packages installed [238.00ms]
+Workspace revisions: <redacted>
+Applied 12 real backend migrations on PostgreSQL 18
+PASS: full src/app.ts in two replicas: health, OpenAPI, real authenticated CRUD, cross-replica DB reads and soft delete
+PASS: real tags gRPC 1→3 replicas, worker SIGKILL recovery, controller restart restores 3, disable→503; shared PostgreSQL data preserved
+PASS: embedded PostgreSQL and temporary workspace cleaned; no production services or OAuth calls used

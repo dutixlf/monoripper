@@ -8,6 +8,8 @@ export class WorkerPool {
   private abort = new AbortController()
   constructor(private app: AppDefinition, private options: ServeOptions, private onUnexpectedExit: (context: string) => void) {}
   ready(context: string) { return this.workers.filter(worker => worker.context === context && !worker.exited && !worker.draining) }
+  targets() { return this.workers.filter(worker => !worker.exited && !worker.draining).map(({ context, pid, port, token }) => ({ context, pid, port, token })) }
+  inFlight(context: string) { return this.workers.reduce((sum, worker) => sum + (worker.context === context ? worker.inFlight : 0), 0) }
   status() { return this.workers.map(worker => ({ context: worker.context, pid: worker.pid, ready: !worker.exited && !worker.draining, draining: worker.draining })) }
   cancelStarts() { this.abort.abort() }
 

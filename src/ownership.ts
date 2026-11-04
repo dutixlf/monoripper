@@ -30,7 +30,7 @@ export function validateApp(app: AppDefinition): void {
   for (const [name, context] of Object.entries(app.contexts)) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(name)) fail(`Invalid context name: ${name}`)
     if (!context || typeof context.entry !== 'string' || !context.entry) fail(`Missing entry: ${name}`)
-    if (!Array.isArray(context.owns) || !context.owns.length) fail(`Missing ownership: ${name}`)
+    if (!Array.isArray(context.owns)) fail(`Missing ownership: ${name}`)
     if (context.resources && (!Array.isArray(context.resources) || new Set(context.resources).size !== context.resources.length)) fail(`Invalid resources: ${name}`)
     for (const resource of context.resources ?? []) {
       const descriptor = app.resources?.[resource]

@@ -2,6 +2,7 @@ export * from './definitions'
 export { serve, type Runtime } from './runtime'
 export { checkApp, type ImportDiagnostic } from './check'
 export { loadConfig } from './config'
+export { requestClientAddress } from './client-ip'
 import { serve } from './runtime'
 
 export type { ControlStatus, Operation, SetContextRequest } from './control-types'

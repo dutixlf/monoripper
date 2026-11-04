@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { resolve } from 'node:path'
 import { MonoripperError, type AppDefinition, type ServeOptions } from './definitions'
 import type { WorkerSpec } from './worker'
+import { logEvent, pipeLines, workerLine } from './log'
 
 export interface ManagedWorker {
   context: string; pid: number; port: number; token: string
@@ -21,14 +22,19 @@ export async function startWorker(context: string, app: AppDefinition, options: 
   const script = fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url))
   const env = { ...process.env, ...options.env }
   if (options.control) env[options.control.tokenEnv] = '' // Do not pass the administrative credential to application workers/dotenv.
+  const format = options.logging?.format ?? 'text'
+  const output = format === 'json' ? 'pipe' : 'inherit'
   const child = Bun.spawn([process.execPath, script], {
-    cwd: resolve(options.root ?? process.cwd()), env, stdout: 'inherit', stderr: 'inherit',
+    cwd: resolve(options.root ?? process.cwd()), env, stdout: output, stderr: output,
     ipc(message) {
       if (!message || typeof message !== 'object') return
       if (message.type === 'diagnostic' && typeof message.code === 'string' && typeof message.message === 'string') {
         try { options.onDiagnostic?.({ context, code: message.code, message: message.message }) }
         catch { console.error('[monoripper] Diagnostic sink failed') }
-        if (!options.onDiagnostic) console.error(`[monoripper] ${context}: ${message.code}`)
+        if (!options.onDiagnostic) {
+          if (format === 'json') logEvent(format, 'error', { event: 'diagnostic', context, worker: child.pid, code: message.code })
+          else console.error(`[monoripper] ${context}: ${message.code}`)
+        }
       }
       if (message.type === 'failed' && typeof message.message === 'string') {
         failMessage = message.message
@@ -38,10 +44,17 @@ export async function startWorker(context: string, app: AppDefinition, options: 
         && Number.isInteger(message.port) && message.port > 0 && message.port <= 65535) readyResolve(message.port)
     },
   })
+  if (format === 'json') {
+    for (const [stream, target] of [['stdout', process.stdout], ['stderr', process.stderr]] as const) {
+      const source = child[stream]
+      if (source instanceof ReadableStream) void pipeLines(source, (line, truncated) => { target.write(workerLine(line, context, child.pid, stream, truncated) + '\n') })
+    }
+  }
   const worker: ManagedWorker = { context, pid: child.pid, port: 0, token, exited: false, draining: false, published: false, inFlight: 0,
     stop, async kill() { if (!worker.exited) child.kill('SIGKILL'); await exit } }
   const exit = child.exited.then(code => {
     worker.exited = true
+    logEvent(format, worker.published && !worker.draining ? 'error' : 'info', { event: 'worker_exited', context, worker: child.pid, exitCode: code })
     readyReject(new MonoripperError('CONTEXT_START_FAILED', `${context} exited (${code})${failMessage ? ': ' + failMessage : ''}`))
     onExit(worker)
     return code
@@ -75,6 +88,7 @@ export async function startWorker(context: string, app: AppDefinition, options: 
       headers: { 'x-monoripper-token': token, 'x-monoripper-probe': '1' }, signal: AbortSignal.any([signal, AbortSignal.timeout(remaining)]), proxy: '',
     })
     if (response.status !== 204 || worker.exited) throw new MonoripperError('CONTEXT_START_FAILED', `${context} failed readiness probe`)
+    logEvent(format, 'info', { event: 'worker_ready', context, worker: child.pid })
     return worker
   } catch (error) {
     try { await stop() } catch (cleanupError) {

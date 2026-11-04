@@ -87,7 +87,7 @@ async function main() {
     if (stopping) return
     runtime = await serve({ ...settings, startupSignal: startup.signal })
     if (stopping) { await runtime.stop(); return }
-    console.log(JSON.stringify({ event: 'listening', url: runtime.url.href, workers: runtime.status(), ...(runtime.controlAddress ? { controlAddress: runtime.controlAddress } : {}) }))
+    console.log(JSON.stringify({ event: 'listening', url: runtime.url.href, workers: runtime.status(), ...(runtime.controlAddress ? { controlAddress: runtime.controlAddress } : {}), ...(runtime.adminUrl ? { adminUrl: runtime.adminUrl.href } : {}) }))
   } catch (error) {
     if (!(stopping && error instanceof MonoripperError && error.code === 'SHUTTING_DOWN')) throw error
   } finally {

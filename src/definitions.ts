@@ -5,6 +5,7 @@ export interface ContextSpec {
   entry: string
   /** Optional directory boundary for the import checker. Defaults to the entry's directory, or the file if siblings share it. */
   root?: string
+  /** Gateway routes. An empty list declares a background context: lifecycle hooks only, no ingress. */
   owns: Ownership[]
   resources?: string[]
 }
@@ -16,8 +17,11 @@ export interface AppDefinition {
 }
 export interface ResourceAccess { get<T = unknown>(name: string): T }
 export interface ContextDefinition {
-  create(input: { app: AnyElysia; resources: ResourceAccess }): AnyElysia | Promise<AnyElysia>
+  /** `signal` aborts when the replica starts stopping; use it to end background loops started in onStart. */
+  create(input: { app: AnyElysia; resources: ResourceAccess; signal: AbortSignal }): AnyElysia | Promise<AnyElysia>
   stop?(): void | Promise<void>
+  /** Prometheus text exposition for this replica. The runtime adds `context` and `worker` labels. */
+  metrics?(): string | Promise<string>
 }
 export interface ResourceDefinition<T> {
   start(input: { env: NodeJS.ProcessEnv; context: string }): T | Promise<T>
@@ -27,7 +31,15 @@ export interface RuntimeConfig {
   /** Manifest module path, resolved relative to the config file. */
   app: string
   initial: Record<string, { replicas: number }>
-  http?: { host?: string; port?: number; maxRequestBodyBytes?: number }
+  http?: {
+    host?: string; port?: number; maxRequestBodyBytes?: number
+    /** Peers (IP or CIDR) allowed to supply X-Forwarded-For/X-Real-IP and other X-Forwarded-* headers. */
+    trustedProxies?: string[]
+  }
+  /** Unauthenticated /-/healthz, /-/readyz and /-/metrics listener. Keep it off the public network. */
+  admin?: { host?: string; port?: number }
+  /** `json` pipes worker output into one JSON object per line with `context` and `worker` fields. */
+  logging?: { format?: 'text' | 'json' }
   lifecycle?: { startupTimeoutMs?: number; shutdownTimeoutMs?: number; requestTimeoutMs?: number }
   recovery?: { maxRestarts?: number; backoffMs?: number }
   environment?: string

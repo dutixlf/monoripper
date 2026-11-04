@@ -19,12 +19,14 @@ let stopping = false
 let started = false
 let disconnectTimeoutMs = 10_000
 let stopPromise: Promise<void> | undefined
+const lifetime = new AbortController()
 const send = (message: object) => { if (process.connected) process.send?.(message) }
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error)
 
 async function cleanup(): Promise<void> {
   if (stopPromise) return stopPromise
   stopping = true
+  lifetime.abort()
   stopPromise = (async () => {
     const errors: unknown[] = []
     const attempt = async (action: () => unknown) => { try { await action() } catch (error) { errors.push(error) } }
@@ -53,17 +55,20 @@ async function start(spec: WorkerSpec): Promise<void> {
     values.set(name, value)
   }
   context = (await import(pathToFileURL(declaration.entry).href)).default as ContextDefinition
-  if (typeof context?.create !== 'function' || (context.stop !== undefined && typeof context.stop !== 'function')) {
-    throw new Error('Context must export valid create/stop functions as default')
+  if (typeof context?.create !== 'function' || (context.stop !== undefined && typeof context.stop !== 'function')
+    || (context.metrics !== undefined && typeof context.metrics !== 'function')) {
+    throw new Error('Context must export valid create/stop/metrics functions as default')
   }
   const base = new Elysia().onRequest(({ request }) => {
     if (request.headers.get('x-monoripper-token') !== spec.token) return new Response('Forbidden', { status: 403 })
+    if (request.headers.get('x-monoripper-metrics') === '1') return metricsResponse()
     if (stopping) return new Response('Draining', { status: 503 })
     if (request.headers.get('x-monoripper-probe') === '1') return new Response(null, { status: 204 })
   })
   app = base
   const created = await context.create({
     app: base,
+    signal: lifetime.signal,
     resources: { get<T>(name: string): T {
       if (!values.has(name)) throw new Error(`Resource not initialized: ${name}`)
       return values.get(name) as T
@@ -96,6 +101,16 @@ async function start(spec: WorkerSpec): Promise<void> {
   for (const hook of startHooks) await hook.fn(app)
   if (stopping) throw new Error('Stopped during startup')
   send({ type: 'ready', token: spec.token, port: app.server!.port, pid: process.pid })
+}
+
+async function metricsResponse(): Promise<Response> {
+  if (!context?.metrics) return new Response(null, { status: 204 })
+  try {
+    return new Response(await context.metrics(), { headers: { 'content-type': 'text/plain; version=0.0.4' } })
+  } catch (error) {
+    send({ type: 'diagnostic', code: 'METRICS_FAILED', message: messageOf(error) })
+    return new Response(null, { status: 500 })
+  }
 }
 
 async function stopAndExit(): Promise<void> {

@@ -1,3 +1,4 @@
+import { BlockList, isIP } from 'node:net'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { MonoripperError, type RuntimeConfig, type ServeOptions } from './definitions'
@@ -32,11 +33,22 @@ export function validateRuntimeConfig(config: Omit<RuntimeConfig, 'app'>): void 
     if ((config.control.port ?? 0) > 65535) throw new MonoripperError('INVALID_CONFIG', 'Invalid control.port')
   }
   if (config.http !== undefined) {
-    assertKeys(config.http, ['host', 'port', 'maxRequestBodyBytes'], 'http')
+    assertKeys(config.http, ['host', 'port', 'maxRequestBodyBytes', 'trustedProxies'], 'http')
     if (config.http.host !== undefined && (typeof config.http.host !== 'string' || !config.http.host)) throw new MonoripperError('INVALID_CONFIG', 'Invalid http.host')
     positive(config.http.port, 'http.port', true)
     if ((config.http.port ?? 0) > 65535) throw new MonoripperError('INVALID_CONFIG', 'http.port exceeds 65535')
     positive(config.http.maxRequestBodyBytes, 'http.maxRequestBodyBytes')
+    if (config.http.trustedProxies !== undefined) trustedProxyList(config.http.trustedProxies)
+  }
+  if (config.admin !== undefined) {
+    assertKeys(config.admin, ['host', 'port'], 'admin')
+    if (config.admin.host !== undefined && (typeof config.admin.host !== 'string' || !config.admin.host)) throw new MonoripperError('INVALID_CONFIG', 'Invalid admin.host')
+    positive(config.admin.port, 'admin.port', true)
+    if ((config.admin.port ?? 0) > 65535) throw new MonoripperError('INVALID_CONFIG', 'admin.port exceeds 65535')
+  }
+  if (config.logging !== undefined) {
+    assertKeys(config.logging, ['format'], 'logging')
+    if (config.logging.format !== undefined && !['text', 'json'].includes(config.logging.format)) throw new MonoripperError('INVALID_CONFIG', 'logging.format must be text or json')
   }
   if (config.lifecycle !== undefined) {
     assertKeys(config.lifecycle, ['startupTimeoutMs', 'shutdownTimeoutMs', 'requestTimeoutMs'], 'lifecycle')
@@ -58,6 +70,24 @@ export function validateRuntimeConfig(config: Omit<RuntimeConfig, 'app'>): void 
   if (replicas > 64) throw new MonoripperError('INVALID_CONFIG', 'Prototype limit: 64 total replicas')
 }
 
+/** Parses IP and CIDR entries; IPv4-mapped IPv6 peers are normalized before lookup. */
+export function trustedProxyList(entries: unknown): BlockList {
+  if (!Array.isArray(entries) || entries.length > 256) throw new MonoripperError('INVALID_CONFIG', 'http.trustedProxies must be a list of at most 256 entries')
+  const list = new BlockList()
+  for (const entry of entries) {
+    const [address, bits, extra] = typeof entry === 'string' ? entry.split('/') : []
+    const family = address ? isIP(address) : 0
+    const prefix = bits === undefined ? undefined : Number(bits)
+    if (!family || extra !== undefined || (prefix !== undefined && (!/^\d{1,3}$/.test(bits!) || prefix > (family === 4 ? 32 : 128)))) {
+      throw new MonoripperError('INVALID_CONFIG', `Invalid http.trustedProxies entry: ${String(entry)}`)
+    }
+    const type = family === 4 ? 'ipv4' : 'ipv6'
+    if (prefix === undefined) list.addAddress(address!, type)
+    else list.addSubnet(address!, prefix, type)
+  }
+  return list
+}
+
 export async function loadApp(filename: string): Promise<Pick<ServeOptions, 'app' | 'root'>> {
   const path = resolve(filename)
   const module = await import(pathToFileURL(path).href)
@@ -70,7 +100,7 @@ export async function loadApp(filename: string): Promise<Pick<ServeOptions, 'app
 export async function loadConfig(filename: string, overrides: Partial<RuntimeConfig> = {}): Promise<ServeOptions> {
   const path = resolve(filename)
   const original = (await import(pathToFileURL(path).href)).default as RuntimeConfig
-  const keys = ['app', 'initial', 'http', 'lifecycle', 'env', 'recovery', 'environment', 'dataDir', 'control']
+  const keys = ['app', 'initial', 'http', 'lifecycle', 'env', 'recovery', 'environment', 'dataDir', 'control', 'admin', 'logging']
   assertKeys(original, keys, 'config')
   validateRuntimeConfig(original)
   assertKeys(overrides, keys, 'override')
@@ -82,6 +112,8 @@ export async function loadConfig(filename: string, overrides: Partial<RuntimeCon
     lifecycle: { ...original.lifecycle, ...overrides.lifecycle },
     recovery: { ...original.recovery, ...overrides.recovery },
     ...(original.control || overrides.control ? { control: { ...original.control!, ...overrides.control } } : {}),
+    ...(original.admin || overrides.admin ? { admin: { ...original.admin, ...overrides.admin } } : {}),
+    ...(original.logging || overrides.logging ? { logging: { ...original.logging, ...overrides.logging } } : {}),
     env: { ...original.env, ...overrides.env },
   }
   validateRuntimeConfig(config)

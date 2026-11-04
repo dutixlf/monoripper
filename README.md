@@ -3,7 +3,8 @@
 Run selected Elysia contexts in separate Bun processes through one HTTP gateway.
 
 **Status: initial local prototype, not production-ready. The package is unpublished.**
-Selected contexts, replicas, resource lifecycles, linting, local config, gRPC scale/status, worker recovery, and persistent desired state are implemented.
+Selected contexts, background contexts, replicas, resource lifecycles, linting, local config, gRPC scale/status, worker recovery,
+persistent desired state, health/readiness, Prometheus metrics, trusted-proxy client addresses, and JSON logs are implemented.
 Registry, release updates, autoscaling, and multiple nodes are not implemented yet.
 
 ## Requirements
@@ -82,10 +83,11 @@ export default defineConfig({
 - Select the file explicitly with `serve --config <file>`. Each installation can have its own file.
 - Priority: defaults → selected config → explicit `--host`/`--port` options.
 - `app` resolves relative to the config. Entries and resources resolve relative to the application manifest.
-- `http`, `lifecycle`, `recovery`, `control`, and `env` merge by field. `initial` is replaced as a whole.
+- `http`, `lifecycle`, `recovery`, `control`, `admin`, `logging`, and `env` merge by field. `initial` is replaced as a whole.
 - Config `dataDir` resolves relative to the config file. With programmatic serve, it resolves relative to root.
 - Supply secrets through the environment or a local config file excluded from the release.
 - Config is trusted executable TypeScript/JavaScript, not a sandbox. Configuration discovery and hot reload are not supported.
+- `admin`, `logging`, and `http.trustedProxies` are described under [Health, metrics, client address, and logs](#health-metrics-client-address-and-logs).
 - Unknown options are rejected. `registry` and deploy options are not supported yet, rather than silently ignored.
 
 ## gRPC and persistent state
@@ -236,6 +238,41 @@ The PostgreSQL check:
 `embedded-postgres` is a dev dependency, not part of the production runtime. `test:package` verifies its absence from the npm consumer.
 The fixture does not use an external `DATABASE_URL`, an existing data directory or production services.
 The PostgreSQL command requires a non-root user and the native dependency described under Checks and build.
+
+## Background contexts
+
+Declare `owns: []` for work without ingress, such as pollers and scheduled jobs. Registering any route in such a context fails startup.
+`create` receives `signal`, which aborts when the replica starts stopping. Start loops in `onStart` without awaiting them, end them on `signal`, and await their completion in `onStop`.
+Replicas are independent processes: a job that must run once needs `replicas: 1` and, across several runtimes, an external lock such as a database advisory lock.
+
+## Health, metrics, client address, and logs
+
+```ts
+export default defineConfig({
+  app: './monoripper.app.ts',
+  initial: { api: { replicas: 2 }, jobs: { replicas: 1 } },
+  http: { host: '0.0.0.0', port: 3000, trustedProxies: ['10.42.0.0/16'] },
+  admin: { host: '0.0.0.0', port: 9090 },
+  logging: { format: 'json' },
+})
+```
+
+`admin` starts a second, unauthenticated listener. Keep it off the public network (bind loopback or restrict it with network policy).
+- `GET /-/healthz`: 200 while the runtime runs, 503 during shutdown. Use it for liveness.
+- `GET /-/readyz`: 200 when state storage is healthy and every context with desired replicas has at least one ready replica. Otherwise 503 with the waiting context names. Shutdown turns it 503 before draining.
+- `GET /-/metrics`: Prometheus text. Runtime series use the `monoripper_` prefix: desired/ready replicas, restarts, in-flight bodies, responses by context/method/status, gateway-generated errors by code, and time to upstream headers.
+  Labels never include paths, query strings, client addresses, or identities.
+- A context may export `metrics()` returning Prometheus text for its replica. The runtime scrapes ready replicas over the internal credential, adds `context` and `worker` (PID) labels, and merges families.
+  Replica exposition cannot use `monoripper_*` names or its own `context`/`worker` labels; invalid exposition is dropped and counted in `monoripper_worker_scrape_errors_total`.
+  Each replica reports its own values: sum counters across workers, and use `max` for gauges that every replica computes from shared state.
+
+The gateway removes `Forwarded`, `X-Real-IP`, and `X-Forwarded-*` request headers unless the direct peer matches `http.trustedProxies` (IP or CIDR).
+For trusted peers it keeps them and walks `X-Forwarded-For` from the right to the first untrusted hop (falling back to `X-Real-IP`).
+Contexts read the result with `requestClientAddress(request)`. Clients cannot supply its internal header.
+
+`logging.format: 'json'` pipes worker stdout/stderr. JSON object lines gain `context` and `worker` fields; other lines become `{time, level, msg, context, worker}`.
+Lines are bounded to 16 KiB. Runtime events (`worker_ready`, `worker_exited`, `diagnostic` codes) are JSON with `component: "monoripper"`.
+Monoripper never writes access logs or diagnostic messages to the log stream. The default `text` format inherits worker output unchanged.
 
 ## Limitations and next step
 

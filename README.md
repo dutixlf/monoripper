@@ -10,7 +10,8 @@ Registry, release updates, autoscaling, and multiple nodes are not implemented y
 ## Requirements
 
 Verified environment: Linux, Bun **1.3.13**, Elysia **1.4.30**.
-For NixOS, run `nix shell nixpkgs#bun`. The working toolchain version is in `.bun-version` and `package.json`.
+With Nix, `nix develop` provides the pinned Bun, bun2nix, and Python. The flake pins nixpkgs `nixos-26.05` and fails evaluation if its Bun differs from `.bun-version`.
+`elysia` is an exact peer dependency, so the application and the runtime share one Elysia copy.
 Install project dependencies with Bun, not npm.
 
 ## Quick start from this repository
@@ -186,6 +187,17 @@ Other platforms are unverified. They can require permission for the correspondin
 Control tests exercise real SetContext/GetStatus/GetOperation. Autoscale explicitly returns UNIMPLEMENTED.
 After build, create a local npm archive with `bun pm pack --ignore-scripts --destination /tmp/monoripper-package`.
 This command publishes nothing. The product license is undecided. `UNLICENSED` is intentional.
+
+### Nix
+
+```sh
+nix flake check                     # typecheck, full test suite (sandboxed embedded PostgreSQL), specs, bun.nix freshness, CLI
+nix build .#tarball                 # result/monoripper.tgz: the same npm archive as `bun pm pack`
+nix run . -- status --controller 127.0.0.1:50051 --project example
+```
+
+After changing dependencies, run `bun install` and then `bun run nix:lock` to regenerate `bun.nix`; the check rejects a stale file.
+Consumers that build with Nix take this flake as an input and install `packages.<system>.tarball` as a tarball dependency (`"monoripper": "file:<path>/monoripper.tgz"`) until the package is published.
 
 ### Land a verified branch on main
 

@@ -7,3 +7,5 @@ dist/
 .monoripper/
 coverage/
 *.tgz
+result
+result-*

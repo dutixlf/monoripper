@@ -7,7 +7,7 @@ import { clientAddress, isTrustedPeer, stripForwarding } from './client-ip'
 import { GatewayMetrics } from './metrics'
 import { WorkerPool } from './worker-pool'
 import { websocketLimits } from './process-worker'
-import { connectWebSocket, upstreamHeaders, type WebSocketRelay } from './websocket'
+import { connectWebSocket, type WebSocketRelay } from './websocket'
 import { StateStore } from './state-store'
 import { Controller } from './controller'
 import type { ControlStatus, Operation, SetContextRequest, WorkerStatus } from './control-types'
@@ -70,6 +70,8 @@ export async function serve(options: ServeOptions): Promise<Runtime> {
   const counters = new Map<string, number>()
   const requestTimeout = options.lifecycle?.requestTimeoutMs ?? 30_000
   const shutdownTimeout = options.lifecycle?.shutdownTimeoutMs ?? 10_000
+  // Well inside the drain deadline, so an unanswered close cannot turn a drain into SHUTDOWN_TIMEOUT.
+  const closeTimeout = Math.max(1, Math.min(Math.floor(shutdownTimeout / 2), 1000))
   const limits = websocketLimits(options)
   const relays = new Set<WebSocketRelay>()
   let handshakes = 0
@@ -128,15 +130,18 @@ export async function serve(options: ServeOptions): Promise<Runtime> {
           handshakes++
           worker.inFlight++
           try {
-            const result = await connectWebSocket({ port: worker.port, target: url.pathname + url.search, headers: upstreamHeaders(headers),
+            const result = await connectWebSocket({ port: worker.port, target: url.pathname + url.search, headers,
               signal: AbortSignal.any([request.signal, deadline]), maxMessageBytes: limits.maxMessageBytes, maxBufferedBytes: limits.maxBufferedBytes,
-              closeTimeoutMs: shutdownTimeout })
+              closeTimeoutMs: closeTimeout, idleTimeoutMs: limits.idleTimeoutSeconds * 1000 })
             if (!('relay' in result)) return result.status < 200 ? reject(502, 'UPSTREAM_ERROR') : new Response(result.body, { status: result.status, headers: result.headers })
             const { relay } = result
             if (stopping || worker.draining || worker.exited) { relay.abort(); return reject(503, stopping ? 'SHUTTING_DOWN' : 'CONTEXT_UNAVAILABLE') }
-            relay.onDone = reason => { relays.delete(relay); worker.sockets.delete(relay); metrics.websocketClosed(owner, reason) }
-            if (!gateway.upgrade(request, { data: relay, headers: result.headers })) { relay.abort(); return reject(400, 'INVALID_UPGRADE') }
+            // Bun runs open() inside upgrade(), and the relay can finish there; register first so onDone always unregisters.
             relays.add(relay); worker.sockets.add(relay)
+            relay.onDone = reason => { relays.delete(relay); worker.sockets.delete(relay); metrics.websocketClosed(owner, reason) }
+            let upgraded = false
+            try { upgraded = gateway.upgrade(request, { data: relay, headers: result.headers }) } catch { /* treated as not upgraded */ }
+            if (!upgraded) { relays.delete(relay); worker.sockets.delete(relay); relay.abort(); return reject(400, 'INVALID_UPGRADE') }
             metrics.websocketOpened(owner)
             return undefined
           } catch {

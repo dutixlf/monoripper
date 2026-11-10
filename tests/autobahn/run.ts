@@ -31,7 +31,7 @@ function control(port: number, path: string): Promise<string> {
 async function runCase(port: number, index: number): Promise<void> {
   const result = await connectWebSocket({
     port, target: `/runCase?case=${index}&agent=${agent}`, headers: new Headers(), signal: AbortSignal.timeout(10_000),
-    maxMessageBytes: 64 * 1024 * 1024, maxBufferedBytes: 256 * 1024 * 1024, closeTimeoutMs: 2000,
+    maxMessageBytes: 64 * 1024 * 1024, maxBufferedBytes: 256 * 1024 * 1024, closeTimeoutMs: 2000, idleTimeoutMs: 600_000,
   })
   if (!('relay' in result)) throw new Error(`case ${index}: handshake refused with ${result.status}`)
   const relay: WebSocketRelay = result.relay
@@ -40,7 +40,6 @@ async function runCase(port: number, index: number): Promise<void> {
     sendText(data) { queueMicrotask(() => relay.fromClient(data)); return data.length },
     sendBinary(data) { const copy = data.slice(); queueMicrotask(() => relay.fromClient(copy)); return copy.length },
     close() {},
-    getBufferedAmount: () => 0,
   }
   relay.attach(echo)
   const timeout = Bun.sleep(60_000).then(() => { throw new Error(`case ${index} did not finish`) })

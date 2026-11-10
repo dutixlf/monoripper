@@ -41,6 +41,7 @@ const live = new Elysia()
     beforeHandle({ headers }) { if (headers.authorization !== 'Bearer ok') return status(401, 'nope') },
     open(ws) { ws.send('welcome') },
   })
+  .ws('/live/deny', { open(ws) { ws.close(4401, 'denied') } })
   .get('/live/last-close', () => lastClose)
   .get('/live/pid', () => ({ pid: process.pid }))
   .get('/live/events', () => new Response(new ReadableStream({

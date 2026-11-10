@@ -23,20 +23,21 @@ afterAll(() => { for (const server of replicas) server.stop(true) })
 
 const connect = (port: number, headers: Record<string, string> = {}, timeoutMs = 2000) => connectWebSocket({
   port, target: '/live?x=1', headers: new Headers(headers), signal: AbortSignal.timeout(timeoutMs),
-  maxMessageBytes: 1024, maxBufferedBytes: 4096, closeTimeoutMs: 100,
+  maxMessageBytes: 1024, maxBufferedBytes: 4096, closeTimeoutMs: 100, idleTimeoutMs: 60_000,
 })
 const upgrade = (accept: string, extra = '') => `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n${extra}\r\n`
 
 test('the replica receives the target, a fresh key and only forwarded headers', async () => {
   let seen = ''
   const port = replica((request, accept) => { seen = request; return upgrade(accept) })
-  const result = await connect(port, { cookie: 'a=1', 'sec-websocket-protocol': 'v1' })
+  const result = await connect(port, { cookie: 'a=1', 'sec-websocket-protocol': 'v1', expect: '100-continue', 'content-length': '0' })
   expect('relay' in result).toBe(true)
   if ('relay' in result) result.relay.abort()
   expect(seen).toStartWith('GET /live?x=1 HTTP/1.1\r\nHost: 127.0.0.1:')
   expect(seen).toContain('cookie: a=1\r\n')
   expect(seen).toContain('sec-websocket-protocol: v1\r\n')
   expect(seen.match(/sec-websocket-key/gi)).toHaveLength(1)
+  expect(seen.toLowerCase()).not.toMatch(/\r\n(expect|content-length|transfer-encoding):/)
 })
 
 test('refusals keep status, headers and bounded bodies', async () => {
@@ -47,6 +48,8 @@ test('refusals keep status, headers and bounded bodies', async () => {
   expect(chunked).toMatchObject({ status: 400, body: null })
   const huge = await connect(replica(() => `HTTP/1.1 413 Too Large\r\nContent-Length: ${70 * 1024}\r\n\r\n${'x'.repeat(70 * 1024)}`))
   expect(huge).toMatchObject({ status: 413, body: null })
+  const filtered = await connect(replica(() => 'HTTP/1.1 403 Forbidden\r\nX-Monoripper-Token: leak\r\nKeep-Alive: timeout=5\r\nConnection: x-hop\r\nX-Hop: 1\r\nX-Kept: yes\r\nContent-Length: 0\r\n\r\n'))
+  expect(!('relay' in filtered) && [...filtered.headers.keys()].sort()).toEqual(['x-kept'])
   const truncated = await connect(replica(() => 'HTTP/1.1 401 Unauthorized\r\nContent-Length: 10\r\nConnection: close\r\n\r\nshort'))
   expect(truncated).toMatchObject({ status: 401 })
 })
@@ -64,6 +67,26 @@ test('invalid upgrades from the replica are transport errors', async () => {
     const port = replica((_, accept) => reply(accept))
     await expect(connect(port, { 'sec-websocket-protocol': 'v1' }), name).rejects.toThrow()
   }
+})
+
+test('review: an abort while connecting to a dead replica never becomes an unhandled rejection', async () => {
+  const unhandled: unknown[] = []
+  const listener = (reason: unknown) => { unhandled.push(reason) }
+  process.on('unhandledRejection', listener)
+  try {
+    const closed = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } })
+    const port = closed.port
+    closed.stop(true)
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const controller = new AbortController()
+      const pending = connectWebSocket({ port, target: '/', headers: new Headers(), signal: controller.signal,
+        maxMessageBytes: 1024, maxBufferedBytes: 4096, closeTimeoutMs: 100, idleTimeoutMs: 60_000 })
+      controller.abort()
+      await expect(pending).rejects.toThrow()
+    }
+    await Bun.sleep(50)
+    expect(unhandled).toEqual([])
+  } finally { process.off('unhandledRejection', listener) }
 })
 
 test('a silent replica times out and a closed port fails fast', async () => {

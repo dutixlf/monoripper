@@ -20,3 +20,27 @@ tasks:
     allure:
       severity: normal
       categories: [config]
+  - id: 3
+    description: Pure frame reader split at every byte boundary, relay containment (1011 internal_error) and maxBufferedBytes caps, malformed replica handshakes.
+    verify: test -f tests/unit/websocket.test.ts && bun test tests/unit/websocket.test.ts tests/e2e/websocket-handshake.test.ts
+    risk: P1
+    status: passing
+    allure:
+      severity: critical
+      categories: [gateway, faults]
+  - id: 4
+    description: Canaries for the Bun 1.3.13 WebSocket quirks the relay works around.
+    verify: test -f tests/compat/bun-websocket.test.ts && bun test tests/compat/bun-websocket.test.ts
+    risk: P2
+    status: passing
+    allure:
+      severity: normal
+      categories: [compat]
+  - id: 5
+    description: Autobahn TestSuite conformance of the replica-side client through the relay (opt-in, rootless Podman).
+    verify: test -f tests/autobahn/run.ts && nix shell nixpkgs#podman -c bun run test:autobahn
+    risk: P1
+    status: passing
+    allure:
+      severity: critical
+      categories: [protocol]

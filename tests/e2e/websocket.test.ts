@@ -61,8 +61,9 @@ async function rawClient(target: Runtime, path: string, headers = '') {
   let buffer = Buffer.alloc(0)
   let upgraded = false
   const texts: string[] = []
+  let closed = false
   let code!: (value: number) => void
-  const closeCode = new Promise<number>(resolve => { code = resolve })
+  const closeCode = new Promise<number>(resolve => { code = value => { closed = true; resolve(value) } })
   const socket = await Bun.connect({ hostname: '127.0.0.1', port: Number(target.url.port), socket: {
     data(_, chunk) {
       buffer = Buffer.concat([buffer, chunk])
@@ -86,7 +87,7 @@ async function rawClient(target: Runtime, path: string, headers = '') {
     close() { code(1006) },
   } })
   socket.write(`GET ${path} HTTP/1.1\r\nHost: ${target.url.host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n${headers}\r\n`)
-  for (let attempt = 0; attempt < 200 && !texts.length; attempt++) await Bun.sleep(10)
+  for (let attempt = 0; attempt < 200 && !texts.length && !closed; attempt++) await Bun.sleep(10)
   return { first: texts[0], closeCode, end: () => socket.terminate(), send: (data: Uint8Array) => socket.write(data), pause: () => socket.pause() }
 }
 
@@ -334,4 +335,37 @@ test('a client that stops reading is closed at maxBufferedBytes and the gateway 
     expect((await fetch(new URL('/live/pid', bounded.url))).status).toBe(200)
     stalled.end()
   } finally { await bounded.stop() }
+})
+
+test('review: a replica that closes in open() does not leak connection slots', async () => {
+  const limited = await start({ http: { port: 0, websocket: { maxConnections: 2 } }, admin: { port: 0 } })
+  try {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const denied = await rawClient(limited, '/live/deny')
+      expect(await denied.closeCode).toBe(4401)
+      denied.end()
+    }
+    await Bun.sleep(50)
+    const text = await fetch(new URL('/-/metrics', limited.adminUrl)).then(r => r.text())
+    expect(text).toContain('monoripper_websocket_connections{context="live"} 0')
+    const after = await rawClient(limited, '/live/echo')
+    expect(after.first).toBe('ready')
+    after.end()
+  } finally { await limited.stop() }
+})
+
+test('review: stop() with stalled clients closes promptly instead of hitting SHUTDOWN_TIMEOUT', async () => {
+  const stalledRuntime = await start({ initial: { live: { replicas: 2 } }, lifecycle: { requestTimeoutMs: 1000, shutdownTimeoutMs: 4000 },
+    http: { port: 0, websocket: { maxMessageBytes: 64 * 1024, maxBufferedBytes: 64 * 1024 * 1024 } } })
+  let stopped = false
+  try {
+    const clients = [await rawClient(stalledRuntime, '/live/echo'), await rawClient(stalledRuntime, '/live/echo')]
+    for (const client of clients) { client.send(clientFrame(1, new TextEncoder().encode('flood:200:60000'))); client.pause() }
+    await Bun.sleep(300) // Let the relays hit client backpressure and pause their replicas.
+    const started = performance.now()
+    await stalledRuntime.stop() // Rejects with SHUTDOWN_TIMEOUT if a drain needed its deadline.
+    stopped = true
+    expect(performance.now() - started).toBeLessThan(2500)
+    for (const client of clients) client.end()
+  } finally { if (!stopped) await stalledRuntime.stop().catch(() => {}) }
 })

@@ -8,17 +8,19 @@ const encoder = new TextEncoder()
 const utf8 = new TextDecoder('utf-8', { fatal: true })
 const latin1 = new TextDecoder('latin1')
 const handshakeOnly = ['sec-websocket-key', 'sec-websocket-version', 'sec-websocket-extensions', 'sec-websocket-accept']
+// An upgrade has no body; an interim 100 from the replica would otherwise read as a refusal.
+const bodyOnly = ['expect', 'content-length', 'transfer-encoding']
 
 export type CloseReason = 'client' | 'upstream' | 'going_away' | 'upstream_lost' | 'protocol_error' | 'message_too_big' | 'backpressure' | 'internal_error'
 export interface Rejected { status: number; headers: Headers; body: Uint8Array<ArrayBuffer> | null }
-export interface RelayLimits { maxMessageBytes: number; maxBufferedBytes: number; closeTimeoutMs: number }
+export interface RelayLimits { maxMessageBytes: number; maxBufferedBytes: number; closeTimeoutMs: number; idleTimeoutMs: number }
 export interface ConnectOptions extends RelayLimits { port: number; target: string; headers: Headers; signal: AbortSignal }
 /** The replica connection; Bun's TCP Socket satisfies it. */
 export interface UpstreamSocket { write(data: Uint8Array | string): number; end(): void; terminate(): void; pause(): void; resume(): void }
 /** The accepted client; Bun's ServerWebSocket satisfies it. */
 export interface RelayClient {
   sendText(data: string): number; sendBinary(data: Uint8Array): number
-  close(code?: number, reason?: string): void; getBufferedAmount(): number
+  close(code?: number, reason?: string): void
 }
 export type ReaderEvent =
   | { type: 'message'; data: string | Uint8Array }
@@ -29,12 +31,6 @@ export type ReaderEvent =
 
 /** Codes an endpoint may put on the wire (RFC 6455 §7.4). */
 export const sendableCode = (code: number) => (code >= 1000 && code <= 1003) || (code >= 1007 && code <= 1014) || (code >= 3000 && code <= 4999)
-
-/** Handshake headers for the replica: end-to-end request headers without the client's key/extensions. */
-export function upstreamHeaders(headers: Headers): Headers {
-  for (const name of handshakeOnly) headers.delete(name)
-  return headers
-}
 
 function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
   if (!a.length) return b
@@ -181,6 +177,7 @@ export async function connectWebSocket(options: ConnectOptions): Promise<{ relay
   let socketRef: UpstreamSocket | undefined
   let resolve!: (value: { relay: WebSocketRelay; headers: Headers } | Rejected) => void, reject!: (error: Error) => void
   const result = new Promise<{ relay: WebSocketRelay; headers: Headers } | Rejected>((ok, fail) => { resolve = ok; reject = fail })
+  result.catch(() => {}) // An abort can reject before Bun.connect settles; the caller then sees the connect error instead.
   const fail = (message: string) => { reject(new Error(message)); socketRef?.terminate() }
   const finishRejected = () => {
     if (!rejected) return
@@ -193,7 +190,8 @@ export async function connectWebSocket(options: ConnectOptions): Promise<{ relay
     head = concat(head, chunk)
     let end = -1
     for (let index = 3; index < head.length; index++) if (head[index] === 10 && head[index - 1] === 13 && head[index - 2] === 10 && head[index - 3] === 13) { end = index - 3; break }
-    if (end < 0) { if (head.length > maxHead) fail('Upstream handshake head too large'); return }
+    if (end < 0 ? head.length > maxHead : end > maxHead) { fail('Upstream handshake head too large'); return }
+    if (end < 0) return
     const [statusLine, ...lines] = latin1.decode(head.subarray(0, end)).split('\r\n')
     const status = Number(/^HTTP\/1\.1 (\d{3})(?: |$)/.exec(statusLine ?? '')?.[1])
     const headers = new Headers()
@@ -207,8 +205,9 @@ export async function connectWebSocket(options: ConnectOptions): Promise<{ relay
     if (status !== 101) {
       const declared = Number(headers.get('content-length'))
       const length = Number.isSafeInteger(declared) && declared > 0 && declared <= maxRejectedBody && !headers.has('transfer-encoding') ? declared : 0
-      for (const name of ['content-length', 'transfer-encoding']) headers.delete(name)
-      rejected = { status, headers, body: null, length, chunks: rest }
+      const forwarded = forwardingHeaders(headers)
+      forwarded.delete('content-length')
+      rejected = { status, headers: forwarded, body: null, length, chunks: rest }
       if (rest.length >= length) finishRejected()
       return
     }
@@ -238,7 +237,8 @@ export async function connectWebSocket(options: ConnectOptions): Promise<{ relay
     if (options.signal.aborted) abort()
     const lines = [`GET ${options.target} HTTP/1.1`, `Host: 127.0.0.1:${options.port}`, 'Upgrade: websocket', 'Connection: Upgrade',
       `Sec-WebSocket-Key: ${key}`, 'Sec-WebSocket-Version: 13']
-    for (const [name, value] of options.headers) lines.push(`${name}: ${value}`)
+    // End-to-end request headers only: the client's key/extensions and body framing never reach the replica.
+    for (const [name, value] of options.headers) if (!handshakeOnly.includes(name) && !bodyOnly.includes(name)) lines.push(`${name}: ${value}`)
     socketRef.write(lines.join('\r\n') + '\r\n\r\n')
     return await result
   } finally { options.signal.removeEventListener('abort', abort) }
@@ -262,6 +262,8 @@ export class WebSocketRelay {
   private finished = false
   private reason?: CloseReason
   private timer?: ReturnType<typeof setTimeout>
+  private keepalive?: ReturnType<typeof setInterval>
+  private lastHeard = performance.now()
 
   constructor(private socket: UpstreamSocket, private limits: RelayLimits, initial: Uint8Array) {
     this.reader = new FrameReader(limits.maxMessageBytes)
@@ -270,6 +272,9 @@ export class WebSocketRelay {
 
   attach(client: RelayClient): void {
     this.client = client
+    // The replica answers pings; silence for idleTimeoutMs means it hung, so treat it as lost (1012).
+    if (!this.finished) this.keepalive = setInterval(() => this.guard(() => this.heartbeat()), Math.max(1, Math.floor(this.limits.idleTimeoutMs / 2)))
+    this.keepalive?.unref()
     if (this.finished || this.sentClose) {
       const away = this.reason === 'going_away'
       this.guard(() => this.closeClient(away ? 1001 : this.reason === 'internal_error' ? 1011 : 1012, away ? 'Going away' : 'Upstream unavailable'), true)
@@ -285,7 +290,6 @@ export class WebSocketRelay {
       const payload = typeof message === 'string' ? encoder.encode(message) : message
       if (payload.length > this.limits.maxMessageBytes) return this.shut('message_too_big', 1009, 'Message too big', 1009, '')
       this.write(clientFrame(typeof message === 'string' ? 1 : 2, payload))
-      if (this.pendingBytes > this.limits.maxBufferedBytes) this.overflow()
     })
   }
   clientClosed(code: number, reason: string): void {
@@ -301,6 +305,7 @@ export class WebSocketRelay {
 
   receive(chunk: Uint8Array): void {
     this.guard(() => {
+      this.lastHeard = performance.now()
       this.reader.push(chunk)
       this.parse()
       // While paused, Bun still delivers what the kernel already buffered; cap what the relay holds.
@@ -341,6 +346,7 @@ export class WebSocketRelay {
     if (this.finished) return
     this.finished = true
     clearTimeout(this.timer)
+    clearInterval(this.keepalive)
     try { this.onDone(this.reason ?? 'internal_error') } catch { /* bookkeeping must not escape */ }
   }
   private overflow() {
@@ -348,17 +354,28 @@ export class WebSocketRelay {
     this.closeClient(1013, 'Backpressure')
     this.socket.terminate()
   }
+  private heartbeat() {
+    if (performance.now() - this.lastHeard > this.limits.idleTimeoutMs) { this.socket.terminate(); return }
+    this.write(clientFrame(9, new Uint8Array(0)))
+  }
   private resume() { this.paused = false; this.socket.resume(); this.parse() }
   private write(bytes: Uint8Array) {
-    if (this.pendingBytes) { this.pending.push(bytes); this.pendingBytes += bytes.length; return }
-    const written = Math.max(0, this.socket.write(bytes))
-    if (written < bytes.length) { this.pending.push(bytes.subarray(written)); this.pendingBytes += bytes.length - written }
+    if (this.finished) return
+    if (this.pendingBytes) { this.pending.push(bytes); this.pendingBytes += bytes.length }
+    else {
+      const written = Math.max(0, this.socket.write(bytes))
+      if (written < bytes.length) { this.pending.push(bytes.subarray(written)); this.pendingBytes += bytes.length - written }
+    }
+    // Covers client data, pongs and pings alike: the replica must keep reading.
+    if (this.pendingBytes > this.limits.maxBufferedBytes) this.overflow()
   }
   private end() { this.ending = true; if (!this.pendingBytes) this.socket.end() }
   private closeClient(code: number | undefined, reason: string) {
     if (this.clientClosing || !this.client) return
     this.clientClosing = true
     if (code === undefined) this.client.close(); else this.client.close(code, reason)
+    // Nothing more goes to the client, so stop honouring its backpressure and read the replica's close reply.
+    if (this.paused) { this.paused = false; this.socket.resume(); queueMicrotask(() => this.guard(() => this.parse())) }
   }
   private sendClose(code: number | undefined, reason: string) {
     if (this.sentClose) return

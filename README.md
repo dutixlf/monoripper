@@ -202,12 +202,14 @@ http: { websocket: { maxMessageBytes: 1048576, maxConnections: 1024, idleTimeout
   Transport failure returns 502 and a handshake slower than `lifecycle.requestTimeoutMs` returns 504. The request timeout covers the handshake only.
 - Unowned paths return 404 and non-WebSocket upgrades (such as `h2c`) return 501. Malformed WebSocket handshakes return 400 `INVALID_UPGRADE`; more than `maxConnections` relayed or pending sockets return 503 `WEBSOCKET_LIMIT`.
 - Text and binary messages, close codes and close reasons pass both ways. Compression is not negotiated.
-  A message above `maxMessageBytes` in either direction closes the socket with 1009. `maxRequestBodyBytes` applies to HTTP bodies only.
+  A replica message above `maxMessageBytes` closes the socket with 1009. A client message above it closes with 1009 up to 2 × `maxMessageBytes`;
+  beyond that Bun drops the client connection (1006) before the relay sees the message. Both count as `message_too_big`. `maxRequestBodyBytes` applies to HTTP bodies only.
 - Backpressure: when the client is slow, the relay stops reading from the replica until the client socket drains.
-  Every place data can pile up is capped at `maxBufferedBytes`: the gateway's client buffer, the relay's queues in both directions, and the replica's own send buffer.
+  Every place data can pile up is capped at `maxBufferedBytes`: the gateway's client buffer, the relay's queues in both directions (client data, pings and pongs), and the replica's own send buffer.
+  When the gateway closes a socket, it stops honouring client backpressure and keeps reading the replica, so drain and shutdown do not wait on slow clients.
   A socket that exceeds it closes with 1013 (try again later) instead of growing or dropping messages, so the worst case is about 3 × `maxBufferedBytes` per socket plus kernel socket buffers.
   Budget memory as `maxConnections × maxBufferedBytes × 3`.
-- Keepalive: both Bun servers ping idle peers and close a socket that is silent for `idleTimeoutSeconds` (1–960).
+- Keepalive: the gateway pings idle clients and the relay pings its replica. A peer that stays silent for `idleTimeoutSeconds` (1–960) is closed; a silent replica counts as lost (1012).
 - Lifecycle: scale-down/drain and runtime shutdown close the affected sockets with 1001 (going away) and wait for them within `shutdownTimeoutMs`. A replica that exits closes its sockets with 1012 (service restart); an invalid frame from the replica closes with 1011. Clients should reconnect on 1001, 1011, 1012 and 1013.
 - Containment: an internal relay error closes only the affected socket with 1011 (`reason="internal_error"`); it never reaches the gateway process or other traffic.
 - `ws.publish()` reaches subscribers of the same replica only. With several replicas, deliver change events to each replica (for example a database notification in a resource) and publish locally.

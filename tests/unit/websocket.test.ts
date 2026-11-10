@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { FrameReader, WebSocketRelay, type ReaderEvent, type RelayClient, type UpstreamSocket } from '../../src/websocket'
+import { FrameReader, WebSocketRelay, type ReaderEvent, type RelayClient, type RelayLimits, type UpstreamSocket } from '../../src/websocket'
 
 const text = (value: string) => new TextEncoder().encode(value)
 const bytes = (...values: number[]) => Uint8Array.from(values)
@@ -126,12 +126,11 @@ class FakeClient implements RelayClient {
   sendText(data: string) { if (this.failSends) throw new Error('send failed'); this.sent.push(data); return this.status }
   sendBinary(data: Uint8Array) { this.sent.push(data); return this.status }
   close(code?: number, reason?: string) { this.closed ??= [code, reason] }
-  getBufferedAmount() { return 0 }
 }
-function relay(limits: Partial<{ maxMessageBytes: number; maxBufferedBytes: number; closeTimeoutMs: number }> = {}) {
+function relay(limits: Partial<RelayLimits> = {}) {
   const socket = new FakeSocket()
   const client = new FakeClient()
-  const relay = new WebSocketRelay(socket, { maxMessageBytes: 1024, maxBufferedBytes: 4096, closeTimeoutMs: 50, ...limits }, new Uint8Array(0))
+  const relay = new WebSocketRelay(socket, { maxMessageBytes: 1024, maxBufferedBytes: 4096, closeTimeoutMs: 50, idleTimeoutMs: 60_000, ...limits }, new Uint8Array(0))
   const done: string[] = []
   relay.onDone = reason => done.push(reason)
   relay.attach(client)
@@ -216,13 +215,41 @@ describe('WebSocketRelay', () => {
     expect(socket.frames.at(-1)!.opcode).toBe(8)
     expect(socket.ended).toBe(true)
   })
+  test('review: closing while the client is backpressured still reads the replica close reply at once', () => {
+    const { relay: r, socket, client, done } = relay({ closeTimeoutMs: 60_000 })
+    client.status = -1
+    r.receive(frame(2, new Uint8Array(10)))
+    expect(socket.paused).toBe(true)
+    r.goAway()
+    expect(socket.paused).toBe(false)
+    r.receive(concat(frame(2, new Uint8Array(10)), close(1001)))
+    expect(socket.ended).toBe(true)
+    r.lost()
+    expect(done).toEqual(['going_away'])
+  })
+  test('review: pongs for a replica that stops reading count toward maxBufferedBytes', () => {
+    const { relay: r, socket, client } = relay()
+    socket.writable = 0
+    for (let index = 0; index < 50 && !client.closed; index++) r.receive(frame(9, new Uint8Array(125)))
+    expect(client.closed).toEqual([1013, 'Backpressure'])
+  })
+  test('the relay pings the replica and treats silence beyond idleTimeoutMs as lost', async () => {
+    const { relay: r, socket } = relay({ idleTimeoutMs: 60 })
+    await Bun.sleep(45)
+    expect(socket.frames.some(f => f.opcode === 9)).toBe(true)
+    r.receive(frame(10))
+    await Bun.sleep(45)
+    expect(socket.terminated).toBe(false)
+    await Bun.sleep(80)
+    expect(socket.terminated).toBe(true)
+  })
   test('attach after the replica is gone closes the client with 1012, or 1001 after goAway', () => {
-    const lost = new WebSocketRelay(new FakeSocket(), { maxMessageBytes: 1024, maxBufferedBytes: 4096, closeTimeoutMs: 50 }, new Uint8Array(0))
+    const lost = new WebSocketRelay(new FakeSocket(), { maxMessageBytes: 1024, maxBufferedBytes: 4096, closeTimeoutMs: 50, idleTimeoutMs: 60_000 }, new Uint8Array(0))
     lost.lost()
     const client = new FakeClient()
     lost.attach(client)
     expect(client.closed).toEqual([1012, 'Upstream unavailable'])
-    const away = new WebSocketRelay(new FakeSocket(), { maxMessageBytes: 1024, maxBufferedBytes: 4096, closeTimeoutMs: 50 }, new Uint8Array(0))
+    const away = new WebSocketRelay(new FakeSocket(), { maxMessageBytes: 1024, maxBufferedBytes: 4096, closeTimeoutMs: 50, idleTimeoutMs: 60_000 }, new Uint8Array(0))
     away.goAway()
     const second = new FakeClient()
     away.attach(second)

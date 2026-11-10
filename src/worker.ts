@@ -31,7 +31,9 @@ async function cleanup(): Promise<void> {
   stopPromise = (async () => {
     const errors: unknown[] = []
     const attempt = async (action: () => unknown) => { try { await action() } catch (error) { errors.push(error) } }
-    if (app?.server) await attempt(() => app!.stop())
+    // The gateway drains HTTP bodies and WebSockets before it sends stop. Bun 1.3.13 never settles a graceful stop()
+    // after an upgrade and hangs a forced one after a server-initiated close unless a graceful stop ran first.
+    if (app?.server) await attempt(() => { app!.server!.stop(false).catch(() => {}); return app!.stop(true) })
     for (const hook of stopHooks) await attempt(() => hook.fn(app!))
     if (context?.stop) await attempt(() => context!.stop!())
     for (const item of resources.toReversed()) if (item.definition.stop) await attempt(() => item.definition.stop!(item.value))

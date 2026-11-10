@@ -50,7 +50,8 @@ Business authentication stays in the context (`beforeHandle`/`upgrade`).
 
 ## 14. Compatibility
 Bun 1.3.13 quirks, each pinned by a canary in `tests/compat/bun-websocket.test.ts`: graceful `stop()` never settles after an upgrade;
-forced `stop()` hangs after a server-initiated close unless a graceful stop ran first; re-sending inside `drain` misses the next drain;
+forced `stop()` hangs after a server-initiated close unless a graceful stop ran first (the closed socket stays in `pendingWebSockets`);
+workers therefore stop listening, wait for `pendingRequests`, then force with a bound; re-sending inside `drain` misses the next drain;
 oversized client messages drop with 1006; the Bun client reports 1001 as 1000; without a selected subprotocol Bun picks the first offered one.
 
 ## 15. Implementation steps
@@ -77,4 +78,5 @@ Run `examples/websocket`, subscribe, POST a notification, then stop the runtime 
 Cross-replica fan-out, permessage-deflate, WebSocket over HTTP/2, endless HTTP streams beyond `requestTimeoutMs`.
 
 ## 20. Gate and handoff
-Both task entrypoints and the full suite pass. Evidence: [e01s04-verify.yaml](../../verifications/e01s04-verify.yaml). User UAT pending.
+All task entrypoints, the full suite, Autobahn and the container gates pass after two independent reviews.
+Evidence: [e01s04-verify.yaml](../../verifications/e01s04-verify.yaml). User UAT pending.

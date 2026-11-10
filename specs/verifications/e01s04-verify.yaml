@@ -9,22 +9,40 @@ environment:
   host: NixOS Linux amd64
   bun: 1.3.13
   elysia: 1.4.30
+  engine: rootless Podman (nix shell nixpkgs#podman)
+  autobahn_image: docker.io/crossbario/autobahn-testsuite@sha256:519915fb568b04c9383f70a1c405ae3ff44ab9e35835b085239c258b6fac3074
 checks:
   typecheck: passed
-  websocket_e2e:
-    command: bun test tests/e2e/websocket.test.ts
-    result: passed
-    tests: 13
   runtime:
     command: bun test tests
     result: passed
-    tests: 72
-    failed: 0
+    note: includes frame reader split at every byte boundary, relay containment and caps, fake-replica handshakes, Bun canaries and e2e lifecycle
+  autobahn:
+    command: nix shell nixpkgs#podman -c bun run test:autobahn
+    result: passed
+    cases: 301
+    note: compression cases 12.* and 13.* excluded; no FAILED or WRONG CODE results
+  elysia: passed
+  elysia_postgres: passed
+  landing: passed
+  package: passed
+  container: passed
+  nix_flake_check: passed
   specs: passed
+reviews:
+  - scope: cfce7e5..8a8377c
+    result: 2 confirmed blockers (slot leak on close in open, unhandled rejection), 1 drain defect, 4 low; all fixed in fd2128d with regression tests
+  - scope: fd2128d
+    result: original findings fixed; new worker stop hang after server-initiated close with an abandoned handler and 3 low relay issues; fixed with regression tests and canaries
 findings:
   - Bun WebSocket client hides refused handshake status; the relay uses Bun.connect with RFC 6455 framing.
-  - Bun 1.3.13 graceful server.stop() never settles after any WebSocket upgrade; runtime awaits the forced stop only.
+  - Bun 1.3.13 graceful server.stop() never settles after any WebSocket upgrade; forced stop hangs after a server-initiated close unless a graceful stop ran first.
+  - A server-initiated close stays counted in pendingWebSockets; workers wait on pendingRequests and bound the forced stop.
   - Resuming inside a Bun drain callback can miss the next drain; resume is deferred with setImmediate.
-  - Bun server drops oversized client messages with 1006; the relay enforces the limit itself and closes with 1009.
+  - Bun server drops oversized client messages with 1006; the relay enforces the limit itself and closes with 1009 up to 2 x maxMessageBytes.
   - Bun WebSocket client reports a received 1001 as 1000; tests read raw close frames.
+residual_risks:
+  - Cross-replica fan-out is out of scope; ws.publish reaches one replica.
+  - Kernel socket buffers are outside maxBufferedBytes accounting.
+  - Not yet exercised against the Hitori backend.
 manual_uat: pending

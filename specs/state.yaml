@@ -38,6 +38,7 @@ implementation_decisions:
   - Programmatic startupSignal and early CLI handlers fix PID-1 startup shutdown. Cleanup failures remain errors.
   - The pinned container runs as UID/GID 1000 with read-only root, mounted credential, local state volume and shared cgroup limits.
   - e01s04 relays WebSockets over a raw RFC 6455 client to the replica so refused handshakes keep their status. Upgrades own as GET. Drain/shutdown close 1001, replica exit 1012.
+  - e01s04 hardening per user request: guarded relay (1011 internal_error), maxBufferedBytes caps (1013), replica keepalive, Autobahn opt-in gate, Bun quirk canaries, two independent reviews.
 pending_approval:
   - User UAT of the local and container examples. Automated checks do not substitute for user acceptance.
 blockers: []
@@ -58,7 +59,7 @@ validation:
   documentation_structure: passed
   yaml_parse_and_cross_references: passed
   planned_verify_shell_syntax: passed
-  runtime_tests: 72_pass_0_fail
+  runtime_tests: all_pass_including_websocket
   typecheck: passed
   installed_package_smoke: passed_with_protobuf_control
   elysia_pagination_integration: passed_two_isolated_replicas

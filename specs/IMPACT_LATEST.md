@@ -1,31 +1,27 @@
-# Impact: self-contained Elysia integration examples
+# Impact: WebSocket relay (e01s04)
 
 ## Target
 
-Replace external application fixtures with repository-owned Elysia examples and remove project-specific references from scripts, documentation and historical evidence. Keep Git remote configuration unchanged.
+Relay WebSocket upgrades from the public gateway to context replicas, so a context can serve plain Elysia `.ws()` routes. Verify SSE passthrough.
 
 ## Dependents
 
-- `package.json`: integration commands become `test:elysia` and `test:elysia:postgres`.
-- `scripts/`: remove external checkout/workspace installation and use local examples.
-- `examples/elysia/`: demonstrate validation, errors, SQL resources and full/sliced apps.
-- README, e01s01 tasks, state and verification records: update runnable commands; anonymize historical external evidence without relabeling it as a new test run.
-- Remove the retired external fixture lockfile. Keep root dependencies and `bun.lock` unchanged.
+- `src/runtime.ts`: upgrade routing, handshake, limits, 1001 on shutdown; graceful `stop(false)` is no longer awaited (Bun 1.3.13 never settles it after an upgrade).
+- `src/websocket.ts` (new): RFC 6455 client to the replica and the relay.
+- `src/worker-pool.ts`, `src/process-worker.ts`: per-replica socket sets; drain closes them and waits.
+- `src/worker.ts`: `.ws()` routes own as GET; WebSocket limits passed to Elysia `listen`.
+- `src/config.ts`, `src/definitions.ts`: `http.websocket`. `src/metrics.ts`: `monoripper_websocket_*`.
+- README, examples/websocket, specs scope/design/state.
 
 ## Affected stories
 
-- e01s01: Elysia behavior and shared PostgreSQL CRUD across replicas.
-- e01s02: PostgreSQL-backed scale, worker recovery, restore and disable checks.
-- e01s03: historical integration evidence only; container behavior is unchanged.
+- e01s01: upgrade requests no longer always return 501; HTTP behaviour is unchanged.
+- e01s02: drain also waits for relayed sockets within `shutdownTimeoutMs`.
 
 ## Test coverage
 
-Existing compatibility, HTTP, resource and control E2E tests remain unchanged. Replacement integration checks must cover validation/auth errors, real database writes/reads across PIDs, soft deletion, disabled imports, recovery and persisted replica counts. Run typecheck, native tests, both new integration commands, package smoke and specs checks.
+New `tests/e2e/websocket.test.ts` and config unit test. Existing HTTP, control, recovery and container tests unchanged and passing.
 
 ## Risk: Medium
 
-The removed harness has no product runtime callers. The main risk is losing integration coverage or presenting historical evidence as a new Elysia run. Preserve scenarios and label historical records explicitly. No new dependencies or runtime API changes are needed.
-
-## Recommended action
-
-Proceed with local fixtures, verify both commands and confirm the remote configuration is byte-for-byte unchanged.
+Hand-written framing on the replica side and Bun quirks (drain re-entry, pause slack, graceful stop). Mitigated by e2e flood, size, close-code and lifecycle tests.

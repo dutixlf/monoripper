@@ -46,7 +46,7 @@ def check():
                 errors.append(f"{name}: broken local link: {target}")
 
     capsule = SPECS / "epics/e01-local-runtime"
-    for number in range(1, 4):
+    for number in range(1, 5):
         story = f"e01s{number:02}"
         documents = list(capsule.glob(f"{story}-*.md"))
         if len(documents) != 1:

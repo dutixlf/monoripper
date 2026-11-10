@@ -1,6 +1,6 @@
 # Implementation roadmap
 
-Status: e01s01/e01s02/e01s03 automated checks passed, awaiting UAT. e02/e03 are not implemented yet.
+Status: e01s01/e01s02/e01s03/e01s04 automated checks passed, awaiting UAT. e02/e03 are not implemented yet.
 Purpose: deliver verifiable value through vertical slices.
 The full product includes e01–e03. Exclusion from e01 does not cancel a requirement.
 

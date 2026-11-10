@@ -2,15 +2,15 @@ schema_version: 1
 active_flow: verify_work
 workflow_mode: solo-git
 active_epic_id: e01
-active_story_id: e01s03
+active_story_id: e01s04
 phase: verify
 implementation_started: true
 vcs:
   kind: git
-  branch: feat/container-lifecycle
-  baseline: b5bb5a3
+  branch: feat/websocket
+  baseline: cfce7e5
   remote: origin
-  note: Remote English main confirmed at b5bb5a3. New container feature starts from that history, without merging legacy local refs.
+  note: e01s04 WebSocket work starts from cfce7e5 (nix flake). Not pushed.
 confirmed_decisions:
   - One npm package, Elysia, and Bun.
   - Import linting and explicit errors are sufficient for the prototype.
@@ -20,7 +20,7 @@ confirmed_decisions:
   - One Bun worker process per context replica. Module isolation takes priority over runtime memory savings.
   - Explicit route owns, one controller, and one ingress.
   - One application artifact with independent updates of selected contexts.
-  - HTTP first. WebSocket/SSE and HA are outside the initial prototype.
+  - HTTP first. HA is outside the initial prototype. WebSocket relay added in e01s04 for live updates; endless HTTP streams stay out.
   - Registry mode in the same package, explicit HTTP SDK between contexts, and a phased roadmap.
   - User config files. Different installations/nodes can have different settings.
 implementation_decisions:
@@ -37,6 +37,7 @@ implementation_decisions:
   - Rootless Podman is provided by a transient Nix shell. No NixOS system configuration changes.
   - Programmatic startupSignal and early CLI handlers fix PID-1 startup shutdown. Cleanup failures remain errors.
   - The pinned container runs as UID/GID 1000 with read-only root, mounted credential, local state volume and shared cgroup limits.
+  - e01s04 relays WebSockets over a raw RFC 6455 client to the replica so refused handshakes keep their status. Upgrades own as GET. Drain/shutdown close 1001, replica exit 1012.
 pending_approval:
   - User UAT of the local and container examples. Automated checks do not substitute for user acceptance.
 blockers: []
@@ -57,7 +58,7 @@ validation:
   documentation_structure: passed
   yaml_parse_and_cross_references: passed
   planned_verify_shell_syntax: passed
-  runtime_tests: 49_pass_0_fail
+  runtime_tests: 72_pass_0_fail
   typecheck: passed
   installed_package_smoke: passed_with_protobuf_control
   elysia_pagination_integration: passed_two_isolated_replicas
@@ -82,5 +83,5 @@ validation:
 handoff:
   next_skill: verify-work
   next_action: User UAT of examples/container/README.md and the local API, then detail e02 registry/releases after e01 acceptance.
-  entrypoint: specs/epics/e01-local-runtime/e01s03-container.md
+  entrypoint: specs/epics/e01-local-runtime/e01s04-websocket.md
   gate: e01_automated_passed_user_uat_pending

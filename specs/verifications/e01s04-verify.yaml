@@ -1,0 +1,30 @@
+type: verification
+context: e01s04 WebSocket relay through the public gateway
+story_id: e01s04
+status: automated_passed_awaiting_user_uat
+session_date: '2026-11-11'
+branch: feat/websocket
+baseline: cfce7e5
+environment:
+  host: NixOS Linux amd64
+  bun: 1.3.13
+  elysia: 1.4.30
+checks:
+  typecheck: passed
+  websocket_e2e:
+    command: bun test tests/e2e/websocket.test.ts
+    result: passed
+    tests: 13
+  runtime:
+    command: bun test tests
+    result: passed
+    tests: 72
+    failed: 0
+  specs: passed
+findings:
+  - Bun WebSocket client hides refused handshake status; the relay uses Bun.connect with RFC 6455 framing.
+  - Bun 1.3.13 graceful server.stop() never settles after any WebSocket upgrade; runtime awaits the forced stop only.
+  - Resuming inside a Bun drain callback can miss the next drain; resume is deferred with setImmediate.
+  - Bun server drops oversized client messages with 1006; the relay enforces the limit itself and closes with 1009.
+  - Bun WebSocket client reports a received 1001 as 1000; tests read raw close frames.
+manual_uat: pending

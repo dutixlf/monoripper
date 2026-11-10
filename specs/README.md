@@ -1,6 +1,6 @@
 # Monoripper — plan and design
 
-Status: **e01s01/e01s02 local control and e01s03 container lifecycle implemented, automated checks passed, awaiting UAT**.
+Status: **e01s01/e01s02 local control, e01s03 container lifecycle and e01s04 WebSocket relay implemented, automated checks passed, awaiting UAT**.
 Current run instructions and implemented API: [project README](../README.md). Other documents also describe future stages.
 Purpose: record agreements and provide an implementation baseline without repeated design work.
 
@@ -41,7 +41,7 @@ After considering a shared runtime, the user confirmed the original process mode
 - One controller node and one public ingress. Full controller HA is deferred.
 - Routing uses explicit `owns`: a path prefix or exact path plus HTTP method.
 - One release contains the entire application build. Selected contexts update independently.
-- The first delivery supports HTTP request/response. WebSocket and endless streams are outside the initial prototype.
+- The first delivery supports HTTP request/response. e01s04 adds relayed WebSockets; endless HTTP streams remain outside the prototype.
 - The registry belongs to the same package but can run as a separate process with on-disk archives.
 - Cross-context calls use explicit HTTP through an SDK, not transparent function serialization.
 - Autoscaling and multiple nodes follow local lifecycle and verifiable updates.
@@ -59,4 +59,4 @@ The full external backend `src/app.ts` and a separate tags context passed real m
 No publication or registry deployment occurred. OAuth and other domain flows are not verified.
 
 Document structure check: `python3 scripts/check-specs.py`.
-Results: [container lifecycle](verifications/e01s03-verify.yaml), [local control](verifications/e01s02-verify.yaml), [PostgreSQL follow-up](verifications/embedded-postgres-verify.yaml), [initial prototype](verifications/e01s01-verify.yaml), [historical plan review](verifications/planning.md).
+Results: [WebSocket relay](verifications/e01s04-verify.yaml), [container lifecycle](verifications/e01s03-verify.yaml), [local control](verifications/e01s02-verify.yaml), [PostgreSQL follow-up](verifications/embedded-postgres-verify.yaml), [initial prototype](verifications/e01s01-verify.yaml), [historical plan review](verifications/planning.md).

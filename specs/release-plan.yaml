@@ -12,7 +12,7 @@ epics:
     status: in_progress
     depends_on: []
     planning_depth: detailed_draft
-    stories: [e01s01, e01s02, e01s03]
+    stories: [e01s01, e01s02, e01s03, e01s04]
   - id: e02
     title: Registry and version updates
     file: epics/e02-releases/epic.yaml

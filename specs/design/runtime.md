@@ -63,7 +63,8 @@ Do not buffer complete uploads/responses. Set body, header, and time limits.
 Preserve status, required headers, and separate Set-Cookie values. Remove hop-by-hop headers.
 Client abort cancels the upstream request. Decrement in-flight only after the body ends, not after receiving headers.
 An upstream failure does not prove that an operation did not execute.
-HTTP Upgrade/WebSocket, SSE, and endless streams are outside the initial guaranteed test matrix.
+WebSocket upgrades follow the same ownership/header rules and are relayed per [e01s04](../epics/e01-local-runtime/e01s04-websocket.md). Other upgrades return 501.
+SSE and other streaming responses pass through unbuffered but stay bounded by the request deadline; endless streams are not guaranteed.
 
 ## 3. Drain
 

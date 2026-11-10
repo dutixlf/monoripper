@@ -62,8 +62,8 @@ out_of_scope:
     reason: The application and a separate migration process own this responsibility.
   - item: Other web frameworks and runtimes in the first version.
     reason: Deferred until the model is validated on Elysia and Bun.
-  - item: WebSocket, SSE, and endless streams in the first prototype.
-    reason: Deferred. Long-lived connections need a separate contract.
+  - item: Endless HTTP streams beyond the request timeout and cross-replica WebSocket fan-out.
+    reason: WebSocket relay and bounded SSE are in e01s04; longer HTTP streams and fan-out need a separate contract.
   - item: Safe multi-tenant execution of untrusted user applications.
     reason: Processes inside a container are not a sandbox for hostile code.
   - item: Exactly-once guarantees for background jobs and external operations.

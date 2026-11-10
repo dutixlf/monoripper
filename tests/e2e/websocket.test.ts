@@ -369,3 +369,18 @@ test('review: stop() with stalled clients closes promptly instead of hitting SHU
     for (const client of clients) client.end()
   } finally { if (!stopped) await stalledRuntime.stop().catch(() => {}) }
 })
+
+test('review: a replica that closed a socket itself still stops cleanly while an abandoned handler runs', async () => {
+  const local = await start({ lifecycle: { requestTimeoutMs: 100, shutdownTimeoutMs: 3000 } })
+  let stopped = false
+  try {
+    const denied = await rawClient(local, '/live/deny')
+    expect(await denied.closeCode).toBe(4401)
+    denied.end()
+    expect((await fetch(new URL('/live/slow', local.url))).status).toBe(504) // Gateway gives up; the handler keeps running.
+    const started = performance.now()
+    await local.stop() // Rejects with SHUTDOWN_TIMEOUT if the worker's server stop hangs.
+    stopped = true
+    expect(performance.now() - started).toBeLessThan(2500)
+  } finally { if (!stopped) await local.stop().catch(() => {}) }
+})

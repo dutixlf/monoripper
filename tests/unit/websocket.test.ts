@@ -243,6 +243,27 @@ describe('WebSocketRelay', () => {
     await Bun.sleep(80)
     expect(socket.terminated).toBe(true)
   })
+  test('review: a client close while backpressured also reads the replica close reply', () => {
+    const { relay: r, socket, client } = relay({ closeTimeoutMs: 60_000 })
+    client.status = -1
+    r.receive(frame(2, new Uint8Array(10)))
+    r.clientClosed(1000, 'bye')
+    expect(socket.paused).toBe(false)
+    r.receive(close(1000, 'bye'))
+    expect(socket.ended).toBe(true)
+  })
+  test('review: no pings after a close frame, and a paused relay is not declared lost', async () => {
+    const paused = relay({ idleTimeoutMs: 40 })
+    paused.client.status = -1
+    paused.relay.receive(frame(2, new Uint8Array(1)))
+    await Bun.sleep(120)
+    expect(paused.socket.terminated).toBe(false)
+    const closing = relay({ idleTimeoutMs: 40, closeTimeoutMs: 60_000 })
+    closing.relay.clientClosed(1000, '')
+    await Bun.sleep(60)
+    expect(closing.socket.frames.map(f => f.opcode)).toEqual([8])
+    paused.relay.lost(); closing.relay.lost()
+  })
   test('attach after the replica is gone closes the client with 1012, or 1001 after goAway', () => {
     const lost = new WebSocketRelay(new FakeSocket(), { maxMessageBytes: 1024, maxBufferedBytes: 4096, closeTimeoutMs: 50, idleTimeoutMs: 60_000 }, new Uint8Array(0))
     lost.lost()

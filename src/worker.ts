@@ -31,15 +31,25 @@ async function cleanup(): Promise<void> {
   stopPromise = (async () => {
     const errors: unknown[] = []
     const attempt = async (action: () => unknown) => { try { await action() } catch (error) { errors.push(error) } }
-    // The gateway drains HTTP bodies and WebSockets before it sends stop. Bun 1.3.13 never settles a graceful stop()
-    // after an upgrade and hangs a forced one after a server-initiated close unless a graceful stop ran first.
-    if (app?.server) await attempt(() => { app!.server!.stop(false).catch(() => {}); return app!.stop(true) })
+    if (app?.server) await attempt(() => stopServer(app!))
     for (const hook of stopHooks) await attempt(() => hook.fn(app!))
     if (context?.stop) await attempt(() => context!.stop!())
     for (const item of resources.toReversed()) if (item.definition.stop) await attempt(() => item.definition.stop!(item.value))
     if (errors.length) throw new AggregateError(errors, errors.map(messageOf).join('; '))
   })()
   return stopPromise
+}
+
+/**
+ * Bun 1.3.13 never settles a graceful stop() after a WebSocket upgrade, and a server-initiated close leaves the
+ * socket counted as pending so a forced stop can hang. Stop listening, let running handlers finish, then force.
+ */
+async function stopServer(app: AnyElysia): Promise<void> {
+  const server = app.server!
+  server.stop(false).catch(() => {})
+  const deadline = performance.now() + disconnectTimeoutMs
+  while (server.pendingRequests > 0 && performance.now() < deadline) await Bun.sleep(10)
+  await Promise.race([app.stop(true), Bun.sleep(100)]) // The listener is already closed if this stays pending.
 }
 
 async function start(spec: WorkerSpec): Promise<void> {

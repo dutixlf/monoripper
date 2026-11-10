@@ -294,7 +294,7 @@ export class WebSocketRelay {
   }
   clientClosed(code: number, reason: string): void {
     this.guard(() => {
-      this.clientClosing = true
+      this.markClientClosing()
       // Bun drops clients above the server's maxPayloadLength with 1006 and this reason.
       this.reason ??= code === 1009 || reason === 'Received too big message' ? 'message_too_big' : 'client'
       this.sendClose(code === 1005 ? undefined : sendableCode(code) ? code : 1001, sendableCode(code) ? reason : '')
@@ -355,6 +355,9 @@ export class WebSocketRelay {
     this.socket.terminate()
   }
   private heartbeat() {
+    if (this.sentClose) return // No pings after a close frame (RFC 6455 §5.5.1).
+    // A paused relay does not read the replica, so silence then reflects the client, which maxBufferedBytes bounds.
+    if (this.paused) { this.lastHeard = performance.now(); return }
     if (performance.now() - this.lastHeard > this.limits.idleTimeoutMs) { this.socket.terminate(); return }
     this.write(clientFrame(9, new Uint8Array(0)))
   }
@@ -372,10 +375,13 @@ export class WebSocketRelay {
   private end() { this.ending = true; if (!this.pendingBytes) this.socket.end() }
   private closeClient(code: number | undefined, reason: string) {
     if (this.clientClosing || !this.client) return
-    this.clientClosing = true
+    this.markClientClosing()
     if (code === undefined) this.client.close(); else this.client.close(code, reason)
-    // Nothing more goes to the client, so stop honouring its backpressure and read the replica's close reply.
-    if (this.paused) { this.paused = false; this.socket.resume(); queueMicrotask(() => this.guard(() => this.parse())) }
+  }
+  /** Nothing more goes to the client, so stop honouring its backpressure and read the replica's close reply. */
+  private markClientClosing() {
+    this.clientClosing = true
+    if (this.paused && this.client) { this.paused = false; this.socket.resume(); queueMicrotask(() => this.guard(() => this.parse())) }
   }
   private sendClose(code: number | undefined, reason: string) {
     if (this.sentClose) return

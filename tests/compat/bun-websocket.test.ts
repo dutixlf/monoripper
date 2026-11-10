@@ -81,3 +81,22 @@ test('canary: without a chosen subprotocol Bun selects the first offered one (do
   ws.close()
   await shutdown(server)
 })
+
+test('canary: a server-initiated close leaves the socket in pendingWebSockets (worker.ts stopServer waits on pendingRequests)', async () => {
+  const server = upgrading({ open(ws) { ws.close(4401, 'x') }, message() {} })
+  const ws = new WebSocket(`ws://127.0.0.1:${server.port}/`)
+  await new Promise(resolve => { ws.onclose = resolve })
+  await Bun.sleep(20)
+  expect(server.pendingWebSockets).toBe(1)
+  await shutdown(server)
+})
+
+test('canary: graceful then forced stop() lets an in-flight HTTP response finish (worker.ts stopServer)', async () => {
+  const server = Bun.serve({ port: 0, async fetch() { await Bun.sleep(200); return new Response('done') } })
+  const response = fetch(`http://127.0.0.1:${server.port}/`).then(r => r.text())
+  await Bun.sleep(30)
+  server.stop(false).catch(() => {})
+  while (server.pendingRequests > 0) await Bun.sleep(10)
+  await server.stop(true)
+  expect(await response).toBe('done')
+})

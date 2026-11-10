@@ -44,6 +44,7 @@ const live = new Elysia()
   .ws('/live/deny', { open(ws) { ws.close(4401, 'denied') } })
   .get('/live/last-close', () => lastClose)
   .get('/live/pid', () => ({ pid: process.pid }))
+  .get('/live/slow', async () => { await Bun.sleep(800); return 'late' })
   .get('/live/events', () => new Response(new ReadableStream({
     async start(controller) {
       controller.enqueue(new TextEncoder().encode('data: one\n\n'))

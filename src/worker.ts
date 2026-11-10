@@ -9,6 +9,7 @@ export interface WorkerSpec {
   token: string
   maxRequestBodyBytes: number
   shutdownTimeoutMs?: number
+  websocket: { maxMessageBytes: number; idleTimeoutSeconds: number }
 }
 
 let app: AnyElysia | undefined
@@ -83,7 +84,8 @@ async function start(spec: WorkerSpec): Promise<void> {
     return Response.json({ error: 'INTERNAL_ERROR' }, { status: 500 })
   } }
   for (const route of app.routes) {
-    if (route.method === '$INTERNALWS' || !ownsRoute(declaration.owns, route.method, route.path)) {
+    // Elysia registers .ws() routes as WS; the gateway matches their upgrade requests as GET.
+    if (route.method === '$INTERNALWS' || !ownsRoute(declaration.owns, route.method === 'WS' ? 'GET' : route.method, route.path)) {
       throw new Error(`Route outside ownership or unsupported: ${route.method} ${route.path}`)
     }
     route.hooks.error ??= []
@@ -97,7 +99,9 @@ async function start(spec: WorkerSpec): Promise<void> {
   stopHooks = [...(app.event.stop ?? [])]
   app.event.start = []
   app.event.stop = []
-  app.listen({ hostname: '127.0.0.1', port: 0, maxRequestBodySize: spec.maxRequestBodyBytes })
+  app.listen({ hostname: '127.0.0.1', port: 0, maxRequestBodySize: spec.maxRequestBodyBytes,
+    // Limits only: Elysia merges its own .ws() dispatch handlers into this object.
+    websocket: { maxPayloadLength: spec.websocket.maxMessageBytes, idleTimeout: spec.websocket.idleTimeoutSeconds, perMessageDeflate: false } as Bun.WebSocketHandler<unknown> })
   for (const hook of startHooks) await hook.fn(app)
   if (stopping) throw new Error('Stopped during startup')
   send({ type: 'ready', token: spec.token, port: app.server!.port, pid: process.pid })

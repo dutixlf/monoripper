@@ -35,3 +35,18 @@ test('unknown config options fail explicitly instead of silently doing nothing',
     await expect(loadConfig(join(root, 'config.ts'))).rejects.toMatchObject({ code: 'INVALID_CONFIG' })
   } finally { await rm(root, { recursive: true, force: true }) }
 })
+
+test('websocket limits are validated', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'monoripper-websocket-config-'))
+  try {
+    await writeFile(join(root, 'app.ts'), `export default {project:'ws',contexts:{live:{entry:'./live.ts',owns:[{method:'GET',path:'/live/*'}]}}}`)
+    const config = (websocket: string) => `export default {app:'./app.ts',initial:{},http:{websocket:${websocket}}}`
+    await writeFile(join(root, 'valid.ts'), config(`{maxMessageBytes:65536,maxConnections:10,idleTimeoutSeconds:960}`))
+    expect((await loadConfig(join(root, 'valid.ts'))).http?.websocket).toEqual({ maxMessageBytes: 65536, maxConnections: 10, idleTimeoutSeconds: 960 })
+    const invalid = [`{idleTimeoutSeconds:961}`, `{maxConnections:0}`, `{maxMessageBytes:1.5}`, `{compress:true}`, `true`]
+    for (const [index, value] of invalid.entries()) {
+      await writeFile(join(root, `invalid-${index}.ts`), config(value)) // Distinct files: Bun caches imported modules.
+      await expect(loadConfig(join(root, `invalid-${index}.ts`))).rejects.toMatchObject({ code: 'INVALID_CONFIG' })
+    }
+  } finally { await rm(root, { recursive: true, force: true }) }
+})

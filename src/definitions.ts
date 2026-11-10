@@ -35,6 +35,8 @@ export interface RuntimeConfig {
     host?: string; port?: number; maxRequestBodyBytes?: number
     /** Peers (IP or CIDR) allowed to supply X-Forwarded-For/X-Real-IP and other X-Forwarded-* headers. */
     trustedProxies?: string[]
+    /** Relayed WebSocket limits. Defaults: 1 MiB messages, 1024 sockets, 120 s idle with automatic pings. */
+    websocket?: { maxMessageBytes?: number; maxConnections?: number; idleTimeoutSeconds?: number }
   }
   /** Unauthenticated /-/healthz, /-/readyz and /-/metrics listener. Keep it off the public network. */
   admin?: { host?: string; port?: number }

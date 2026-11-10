@@ -4,7 +4,7 @@ Run selected Elysia contexts in separate Bun processes through one HTTP gateway.
 
 **Status: initial local prototype, not production-ready. The package is unpublished.**
 Selected contexts, background contexts, replicas, resource lifecycles, linting, local config, gRPC scale/status, worker recovery,
-persistent desired state, health/readiness, Prometheus metrics, trusted-proxy client addresses, and JSON logs are implemented.
+persistent desired state, health/readiness, Prometheus metrics, trusted-proxy client addresses, JSON logs, and relayed WebSockets are implemented.
 Registry, release updates, autoscaling, and multiple nodes are not implemented yet.
 
 ## Requirements
@@ -89,6 +89,7 @@ export default defineConfig({
 - Supply secrets through the environment or a local config file excluded from the release.
 - Config is trusted executable TypeScript/JavaScript, not a sandbox. Configuration discovery and hot reload are not supported.
 - `admin`, `logging`, and `http.trustedProxies` are described under [Health, metrics, client address, and logs](#health-metrics-client-address-and-logs).
+- `http.websocket` is described under [WebSocket and streaming](#websocket-and-streaming).
 - Unknown options are rejected. `registry` and deploy options are not supported yet, rather than silently ignored.
 
 ## gRPC and persistent state
@@ -139,7 +140,7 @@ Cold startup remains fail-fast. If a saved context cannot start, control is not 
 
 Each method/path has one owner. `owns` supports exact paths and a trailing `/*`.
 The `/api/user/*` prefix includes `/api/user` and its descendants, but not `/api/user-old`.
-Cover HEAD/OPTIONS explicitly or use method `*`. Context ownership cannot overlap.
+Cover HEAD/OPTIONS explicitly or use method `*`. Context ownership cannot overlap. WebSocket upgrades match as `GET`.
 An unknown path returns 404. A known context without a live replica returns 503.
 
 For a resource, declare its entry and allowed contexts in `app.resources`. Then list its name in `context.resources`.
@@ -168,6 +169,46 @@ Failures before response headers return a safe 502/504. After the body starts, a
 Unhandled exceptions return a safe 500. Application error handlers are preserved.
 For detailed errors, supply an `onDiagnostic(event)` callback to programmatic `serve`.
 This callback is for operators. Application messages can contain sensitive data. Filter them before storage.
+
+## WebSocket and streaming
+
+A context serves WebSockets with plain Elysia `.ws()`. Clients connect to the normal public port; the gateway relays each socket to one replica.
+
+```ts
+// monoripper.app.ts: the upgrade request is a GET, so a GET (or *) rule must own the path.
+live: { entry: './contexts/live.ts', owns: [{ method: 'GET', path: '/api/live/*' }] },
+
+// contexts/live.ts: a typed Elysia plugin keeps .ws() inference; mount it on the provided app.
+const live = new Elysia().ws('/api/live/updates', {
+  open(ws) { ws.subscribe('servers'); ws.send({ type: 'hello' }) },
+  message(ws, message) { ws.send(message) },
+})
+export default defineContext({ create: ({ app }) => app.use(live) })
+```
+
+The runnable version is [examples/websocket](examples/websocket/README.md). The worker passes Monoripper's limits to its own Bun server; do not call `.listen()`.
+
+```ts
+http: { websocket: { maxMessageBytes: 1048576, maxConnections: 1024, idleTimeoutSeconds: 120 } } // Defaults.
+```
+
+- Handshake: the gateway chooses a ready replica round-robin like HTTP and opens the replica socket before it accepts the client.
+  Path, query, `Sec-WebSocket-Protocol`, cookies, authorization and other end-to-end headers are forwarded.
+  Hop-by-hop headers, the client's `Sec-WebSocket-Key`/`-Extensions`, `x-monoripper-*` and untrusted forwarding headers are removed, as for HTTP.
+  `requestClientAddress(ws.data.request)` and the internal credential work as for HTTP. Headers from the replica's 101 response, such as `Set-Cookie`, reach the client.
+- The replica chooses the subprotocol (Elysia `upgrade` can set `sec-websocket-protocol`). If it sets none, Bun selects the first offered value, as a direct Bun server would.
+- A refused handshake (for example `beforeHandle` returning 401) returns the replica's status, headers and a body up to 64 KiB without upgrading.
+  Transport failure returns 502 and a handshake slower than `lifecycle.requestTimeoutMs` returns 504. The request timeout covers the handshake only.
+- Unowned paths return 404 and non-WebSocket upgrades (such as `h2c`) return 501. Malformed WebSocket handshakes return 400 `INVALID_UPGRADE`; more than `maxConnections` relayed or pending sockets return 503 `WEBSOCKET_LIMIT`.
+- Text and binary messages, close codes and close reasons pass both ways. Compression is not negotiated.
+  A message above `maxMessageBytes` in either direction closes the socket with 1009. `maxRequestBodyBytes` applies to HTTP bodies only.
+- Backpressure: when the client is slow, the relay stops reading from the replica until the client socket drains; the overshoot is bounded by the TCP receive buffer.
+  Client data that the replica cannot accept is queued up to 16 MiB (or twice `maxMessageBytes`), then the socket closes with 1013.
+- Keepalive: both Bun servers ping idle peers and close a socket that is silent for `idleTimeoutSeconds` (1–960).
+- Lifecycle: scale-down/drain and runtime shutdown close the affected sockets with 1001 (going away) and wait for them within `shutdownTimeoutMs`. A replica that exits closes its sockets with 1012 (service restart); an invalid frame from the replica closes with 1011. Clients should reconnect on 1001, 1011 and 1012.
+- `ws.publish()` reaches subscribers of the same replica only. With several replicas, deliver change events to each replica (for example a database notification in a resource) and publish locally.
+
+Streaming HTTP responses, including Server-Sent Events, pass through without buffering. They are ordinary requests: `lifecycle.requestTimeoutMs` still bounds the whole response, so use WebSockets for connections that stay open.
 
 ## Checks and build
 
@@ -273,6 +314,8 @@ export default defineConfig({
 - `GET /-/healthz`: 200 while the runtime runs, 503 during shutdown. Use it for liveness.
 - `GET /-/readyz`: 200 when state storage is healthy and every context with desired replicas has at least one ready replica. Otherwise 503 with the waiting context names. Shutdown turns it 503 before draining.
 - `GET /-/metrics`: Prometheus text. Runtime series use the `monoripper_` prefix: desired/ready replicas, restarts, in-flight bodies, responses by context/method/status, gateway-generated errors by code, and time to upstream headers.
+  WebSockets add `monoripper_websocket_connections{context}`, `monoripper_websocket_opened_total{context}` and `monoripper_websocket_closed_total{context,reason}`,
+  where `reason` is one of `client`, `upstream`, `going_away`, `upstream_lost`, `protocol_error`, `message_too_big` or `backpressure`. Accepted handshakes count as status 101 in `monoripper_http_requests_total`.
   Labels never include paths, query strings, client addresses, or identities.
 - A context may export `metrics()` returning Prometheus text for its replica. The runtime scrapes ready replicas over the internal credential, adds `context` and `worker` (PID) labels, and merges families.
   Replica exposition cannot use `monoripper_*` names or its own `context`/`worker` labels; invalid exposition is dropped and counted in `monoripper_worker_scrape_errors_total`.
@@ -288,9 +331,9 @@ Monoripper never writes access logs or diagnostic messages to the log stream. Th
 
 ## Limitations and next step
 
-Registry/deploy, autoscaling, WebSocket/SSE, cross-node calls, and controller HA are absent. Persistence saves desired state, not JS heaps or active requests.
+Registry/deploy, autoscaling, cross-node calls, cross-replica WebSocket fan-out, and controller HA are absent. HTTP streams stay bounded by the request timeout. Persistence saves desired state, not JS heaps or active requests.
 The HTTP port does not provide authentication. Elysia contexts must implement business auth. Public services also need a standard TLS ingress.
 Replicas share container limits. Exactly-once guarantees and isolation of untrusted code are not provided.
-Local e01s01/e01s02 control and e01s03 container checks are implemented. User UAT is still required before closing e01.
+Local e01s01/e01s02 control, e01s03 container and e01s04 WebSocket checks are implemented. User UAT is still required before closing e01.
 Next product stage: e02 registry/releases. The current image embeds an example, not the future release delivery mechanism.
 Design and roadmap: [specs/README.md](specs/README.md).

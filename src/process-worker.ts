@@ -8,8 +8,14 @@ import { logEvent, pipeLines, workerLine } from './log'
 export interface ManagedWorker {
   context: string; pid: number; port: number; token: string
   exited: boolean; draining: boolean; published: boolean; inFlight: number
+  /** Relayed WebSockets; drain asks each to close with 1001 and waits until the set is empty. */
+  sockets: Set<{ goAway(): void }>
   stop(timeoutMs?: number): Promise<void>
   kill(): Promise<void>
+}
+export function websocketLimits(options: ServeOptions) {
+  const ws = options.http?.websocket
+  return { maxMessageBytes: ws?.maxMessageBytes ?? 1024 * 1024, maxConnections: ws?.maxConnections ?? 1024, idleTimeoutSeconds: ws?.idleTimeoutSeconds ?? 120 }
 }
 export async function startWorker(context: string, app: AppDefinition, options: ServeOptions,
   onExit: (worker: ManagedWorker) => void, signal: AbortSignal): Promise<ManagedWorker> {
@@ -50,7 +56,7 @@ export async function startWorker(context: string, app: AppDefinition, options: 
       if (source instanceof ReadableStream) void pipeLines(source, (line, truncated) => { target.write(workerLine(line, context, child.pid, stream, truncated) + '\n') })
     }
   }
-  const worker: ManagedWorker = { context, pid: child.pid, port: 0, token, exited: false, draining: false, published: false, inFlight: 0,
+  const worker: ManagedWorker = { context, pid: child.pid, port: 0, token, exited: false, draining: false, published: false, inFlight: 0, sockets: new Set(),
     stop, async kill() { if (!worker.exited) child.kill('SIGKILL'); await exit } }
   const exit = child.exited.then(code => {
     worker.exited = true
@@ -80,7 +86,8 @@ export async function startWorker(context: string, app: AppDefinition, options: 
   const startedAt = performance.now()
   try {
     if (signal.aborted) aborted()
-    const spec: WorkerSpec = { context, app, token, shutdownTimeoutMs: shutdownTimeout, maxRequestBodyBytes: options.http?.maxRequestBodyBytes ?? 16 * 1024 * 1024 }
+    const spec: WorkerSpec = { context, app, token, shutdownTimeoutMs: shutdownTimeout, maxRequestBodyBytes: options.http?.maxRequestBodyBytes ?? 16 * 1024 * 1024,
+      websocket: websocketLimits(options) }
     child.send({ type: 'start', spec })
     worker.port = await ready
     const remaining = Math.max(1, Math.ceil(startupTimeout - (performance.now() - startedAt)))

@@ -33,12 +33,17 @@ export function validateRuntimeConfig(config: Omit<RuntimeConfig, 'app'>): void 
     if ((config.control.port ?? 0) > 65535) throw new MonoripperError('INVALID_CONFIG', 'Invalid control.port')
   }
   if (config.http !== undefined) {
-    assertKeys(config.http, ['host', 'port', 'maxRequestBodyBytes', 'trustedProxies'], 'http')
+    assertKeys(config.http, ['host', 'port', 'maxRequestBodyBytes', 'trustedProxies', 'websocket'], 'http')
     if (config.http.host !== undefined && (typeof config.http.host !== 'string' || !config.http.host)) throw new MonoripperError('INVALID_CONFIG', 'Invalid http.host')
     positive(config.http.port, 'http.port', true)
     if ((config.http.port ?? 0) > 65535) throw new MonoripperError('INVALID_CONFIG', 'http.port exceeds 65535')
     positive(config.http.maxRequestBodyBytes, 'http.maxRequestBodyBytes')
     if (config.http.trustedProxies !== undefined) trustedProxyList(config.http.trustedProxies)
+    if (config.http.websocket !== undefined) {
+      assertKeys(config.http.websocket, ['maxMessageBytes', 'maxConnections', 'idleTimeoutSeconds'], 'http.websocket')
+      for (const [name, value] of Object.entries(config.http.websocket)) positive(value, `http.websocket.${name}`)
+      if ((config.http.websocket.idleTimeoutSeconds ?? 0) > 960) throw new MonoripperError('INVALID_CONFIG', 'http.websocket.idleTimeoutSeconds exceeds 960')
+    }
   }
   if (config.admin !== undefined) {
     assertKeys(config.admin, ['host', 'port'], 'admin')

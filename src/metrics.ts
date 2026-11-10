@@ -9,7 +9,7 @@ interface Family { help?: string; type: string; samples: string[] }
 export interface ScrapeTarget { context: string; pid: number; port: number; token: string }
 export interface RuntimeGauges {
   project: string; environment: string; ready: boolean
-  contexts: { name: string; desiredReplicas: number; readyReplicas: number; restarts: number; inFlight: number }[]
+  contexts: { name: string; desiredReplicas: number; readyReplicas: number; restarts: number; inFlight: number; websockets: number }[]
 }
 
 /** Gateway request accounting. Labels are context/method/status only: no paths, clients or identities. */
@@ -18,6 +18,8 @@ export class GatewayMetrics {
   private errors = new Map<string, number>()
   private durations = new Map<string, { counts: number[]; sum: number; count: number }>()
   private scrapeErrors = new Map<string, number>()
+  private socketsOpened = new Map<string, number>()
+  private socketsClosed = new Map<string, number>()
 
   observe(context: string, method: string, status: number, seconds: number): void {
     const key = [context, methods.has(method) ? method : 'OTHER', String(status)].join('\0')
@@ -27,6 +29,12 @@ export class GatewayMetrics {
     histogram.sum += seconds
     histogram.count++
     this.durations.set(context, histogram)
+  }
+  websocketOpened(context: string): void { this.socketsOpened.set(context, (this.socketsOpened.get(context) ?? 0) + 1) }
+  /** `reason` is a fixed relay classification, never a peer-supplied close reason. */
+  websocketClosed(context: string, reason: string): void {
+    const key = `${context}\0${reason}`
+    this.socketsClosed.set(key, (this.socketsClosed.get(key) ?? 0) + 1)
   }
   gatewayError(context: string, code: string): void {
     const key = `${context}\0${code}`
@@ -44,6 +52,12 @@ export class GatewayMetrics {
     family('monoripper_context_replicas_ready', 'gauge', 'Ready replicas per context.', gauges.contexts.map(c => `monoripper_context_replicas_ready${labels({ context: c.name })} ${c.readyReplicas}`))
     family('monoripper_context_restarts', 'gauge', 'Automatic recoveries in the current restart budget window.', gauges.contexts.map(c => `monoripper_context_restarts${labels({ context: c.name })} ${c.restarts}`))
     family('monoripper_http_in_flight', 'gauge', 'Requests whose response body is still open.', gauges.contexts.map(c => `monoripper_http_in_flight${labels({ context: c.name })} ${c.inFlight}`))
+    family('monoripper_websocket_connections', 'gauge', 'Relayed WebSockets open per context.', gauges.contexts.map(c => `monoripper_websocket_connections${labels({ context: c.name })} ${c.websockets}`))
+    family('monoripper_websocket_opened_total', 'counter', 'Relayed WebSockets accepted per context.', [...this.socketsOpened].map(([context, value]) => `monoripper_websocket_opened_total${labels({ context })} ${value}`))
+    family('monoripper_websocket_closed_total', 'counter', 'Relayed WebSockets closed by context and close cause.', [...this.socketsClosed].map(([key, value]) => {
+      const [context, reason] = key.split('\0') as [string, string]
+      return `monoripper_websocket_closed_total${labels({ context, reason })} ${value}`
+    }))
     family('monoripper_http_requests_total', 'counter', 'Gateway responses by owner context, method and status.', [...this.requests].map(([key, value]) => {
       const [context, method, status] = key.split('\0') as [string, string, string]
       return `monoripper_http_requests_total${labels({ context, method, status })} ${value}`

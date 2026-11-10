@@ -10,6 +10,7 @@ export class WorkerPool {
   ready(context: string) { return this.workers.filter(worker => worker.context === context && !worker.exited && !worker.draining) }
   targets() { return this.workers.filter(worker => !worker.exited && !worker.draining).map(({ context, pid, port, token }) => ({ context, pid, port, token })) }
   inFlight(context: string) { return this.workers.reduce((sum, worker) => sum + (worker.context === context ? worker.inFlight : 0), 0) }
+  sockets(context: string) { return this.workers.reduce((sum, worker) => sum + (worker.context === context ? worker.sockets.size : 0), 0) }
   status() { return this.workers.map(worker => ({ context: worker.context, pid: worker.pid, ready: !worker.exited && !worker.draining, draining: worker.draining })) }
   cancelStarts() { this.abort.abort() }
 
@@ -48,11 +49,13 @@ export class WorkerPool {
 
   private async drain(worker: ManagedWorker) {
     worker.draining = true
+    for (const socket of worker.sockets) socket.goAway()
     const deadline = performance.now() + (this.options.lifecycle?.shutdownTimeoutMs ?? 10_000)
-    while (worker.inFlight > 0 && !worker.exited && performance.now() < deadline) await Bun.sleep(5)
-    if (worker.inFlight > 0 && !worker.exited) {
+    const busy = () => (worker.inFlight > 0 || worker.sockets.size > 0) && !worker.exited
+    while (busy() && performance.now() < deadline) await Bun.sleep(5)
+    if (busy()) {
       await worker.kill()
-      throw new MonoripperError('SHUTDOWN_TIMEOUT', `${worker.context} still had active response bodies at shutdown deadline`)
+      throw new MonoripperError('SHUTDOWN_TIMEOUT', `${worker.context} still had active response bodies or WebSockets at shutdown deadline`)
     }
     await worker.stop(Math.max(1, Math.ceil(deadline - performance.now())))
     this.workers = this.workers.filter(item => item !== worker)

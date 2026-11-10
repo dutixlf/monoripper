@@ -40,9 +40,13 @@ export function validateRuntimeConfig(config: Omit<RuntimeConfig, 'app'>): void 
     positive(config.http.maxRequestBodyBytes, 'http.maxRequestBodyBytes')
     if (config.http.trustedProxies !== undefined) trustedProxyList(config.http.trustedProxies)
     if (config.http.websocket !== undefined) {
-      assertKeys(config.http.websocket, ['maxMessageBytes', 'maxConnections', 'idleTimeoutSeconds'], 'http.websocket')
-      for (const [name, value] of Object.entries(config.http.websocket)) positive(value, `http.websocket.${name}`)
-      if ((config.http.websocket.idleTimeoutSeconds ?? 0) > 960) throw new MonoripperError('INVALID_CONFIG', 'http.websocket.idleTimeoutSeconds exceeds 960')
+      const websocket = config.http.websocket
+      assertKeys(websocket, ['maxMessageBytes', 'maxConnections', 'idleTimeoutSeconds', 'maxBufferedBytes'], 'http.websocket')
+      for (const [name, value] of Object.entries(websocket)) positive(value, `http.websocket.${name}`)
+      if ((websocket.idleTimeoutSeconds ?? 0) > 960) throw new MonoripperError('INVALID_CONFIG', 'http.websocket.idleTimeoutSeconds exceeds 960')
+      if (websocket.maxBufferedBytes !== undefined && websocket.maxBufferedBytes < (websocket.maxMessageBytes ?? 1024 * 1024)) {
+        throw new MonoripperError('INVALID_CONFIG', 'http.websocket.maxBufferedBytes must be at least maxMessageBytes')
+      }
     }
   }
   if (config.admin !== undefined) {

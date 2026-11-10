@@ -189,7 +189,8 @@ export default defineContext({ create: ({ app }) => app.use(live) })
 The runnable version is [examples/websocket](examples/websocket/README.md). The worker passes Monoripper's limits to its own Bun server; do not call `.listen()`.
 
 ```ts
-http: { websocket: { maxMessageBytes: 1048576, maxConnections: 1024, idleTimeoutSeconds: 120 } } // Defaults.
+// Defaults. maxBufferedBytes defaults to 4 × maxMessageBytes and must be at least maxMessageBytes.
+http: { websocket: { maxMessageBytes: 1048576, maxConnections: 1024, idleTimeoutSeconds: 120, maxBufferedBytes: 4194304 } }
 ```
 
 - Handshake: the gateway chooses a ready replica round-robin like HTTP and opens the replica socket before it accepts the client.
@@ -202,11 +203,17 @@ http: { websocket: { maxMessageBytes: 1048576, maxConnections: 1024, idleTimeout
 - Unowned paths return 404 and non-WebSocket upgrades (such as `h2c`) return 501. Malformed WebSocket handshakes return 400 `INVALID_UPGRADE`; more than `maxConnections` relayed or pending sockets return 503 `WEBSOCKET_LIMIT`.
 - Text and binary messages, close codes and close reasons pass both ways. Compression is not negotiated.
   A message above `maxMessageBytes` in either direction closes the socket with 1009. `maxRequestBodyBytes` applies to HTTP bodies only.
-- Backpressure: when the client is slow, the relay stops reading from the replica until the client socket drains; the overshoot is bounded by the TCP receive buffer.
-  Client data that the replica cannot accept is queued up to 16 MiB (or twice `maxMessageBytes`), then the socket closes with 1013.
+- Backpressure: when the client is slow, the relay stops reading from the replica until the client socket drains.
+  Every place data can pile up is capped at `maxBufferedBytes`: the gateway's client buffer, the relay's queues in both directions, and the replica's own send buffer.
+  A socket that exceeds it closes with 1013 (try again later) instead of growing or dropping messages, so the worst case is about 3 × `maxBufferedBytes` per socket plus kernel socket buffers.
+  Budget memory as `maxConnections × maxBufferedBytes × 3`.
 - Keepalive: both Bun servers ping idle peers and close a socket that is silent for `idleTimeoutSeconds` (1–960).
-- Lifecycle: scale-down/drain and runtime shutdown close the affected sockets with 1001 (going away) and wait for them within `shutdownTimeoutMs`. A replica that exits closes its sockets with 1012 (service restart); an invalid frame from the replica closes with 1011. Clients should reconnect on 1001, 1011 and 1012.
+- Lifecycle: scale-down/drain and runtime shutdown close the affected sockets with 1001 (going away) and wait for them within `shutdownTimeoutMs`. A replica that exits closes its sockets with 1012 (service restart); an invalid frame from the replica closes with 1011. Clients should reconnect on 1001, 1011, 1012 and 1013.
+- Containment: an internal relay error closes only the affected socket with 1011 (`reason="internal_error"`); it never reaches the gateway process or other traffic.
 - `ws.publish()` reaches subscribers of the same replica only. With several replicas, deliver change events to each replica (for example a database notification in a resource) and publish locally.
+
+The replica-side client passes the [Autobahn TestSuite](https://github.com/crossbario/autobahn-testsuite) (301 cases, compression excluded): `nix shell nixpkgs#podman -c bun run test:autobahn` (opt-in, needs rootless Podman, pinned image digest).
+`tests/compat/bun-websocket.test.ts` holds canaries for the Bun 1.3.13 quirks the relay works around; a failing canary after a Bun upgrade names the workaround to revisit.
 
 Streaming HTTP responses, including Server-Sent Events, pass through without buffering. They are ordinary requests: `lifecycle.requestTimeoutMs` still bounds the whole response, so use WebSockets for connections that stay open.
 
@@ -315,7 +322,7 @@ export default defineConfig({
 - `GET /-/readyz`: 200 when state storage is healthy and every context with desired replicas has at least one ready replica. Otherwise 503 with the waiting context names. Shutdown turns it 503 before draining.
 - `GET /-/metrics`: Prometheus text. Runtime series use the `monoripper_` prefix: desired/ready replicas, restarts, in-flight bodies, responses by context/method/status, gateway-generated errors by code, and time to upstream headers.
   WebSockets add `monoripper_websocket_connections{context}`, `monoripper_websocket_opened_total{context}` and `monoripper_websocket_closed_total{context,reason}`,
-  where `reason` is one of `client`, `upstream`, `going_away`, `upstream_lost`, `protocol_error`, `message_too_big` or `backpressure`. Accepted handshakes count as status 101 in `monoripper_http_requests_total`.
+  where `reason` is one of `client`, `upstream`, `going_away`, `upstream_lost`, `protocol_error`, `message_too_big`, `backpressure` or `internal_error`. Accepted handshakes count as status 101 in `monoripper_http_requests_total`.
   Labels never include paths, query strings, client addresses, or identities.
 - A context may export `metrics()` returning Prometheus text for its replica. The runtime scrapes ready replicas over the internal credential, adds `context` and `worker` (PID) labels, and merges families.
   Replica exposition cannot use `monoripper_*` names or its own `context`/`worker` labels; invalid exposition is dropped and counted in `monoripper_worker_scrape_errors_total`.

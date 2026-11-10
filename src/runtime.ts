@@ -85,6 +85,8 @@ export async function serve(options: ServeOptions): Promise<Runtime> {
       websocket: {
         // The relay enforces maxMessageBytes with a clean 1009; Bun's own ceiling (abrupt 1006) is a backstop.
         maxPayloadLength: Math.min(limits.maxMessageBytes * 2, 0x7fffffff), idleTimeout: limits.idleTimeoutSeconds, sendPings: true, perMessageDeflate: false,
+        // The relay pauses the replica on the first backpressured send; this limit is only a backstop.
+        backpressureLimit: limits.maxBufferedBytes, closeOnBackpressureLimit: true,
         open(ws) { ws.data.attach(ws) },
         message(ws, message) { ws.data.fromClient(message) },
         close(ws, code, reason) { ws.data.clientClosed(code, reason) },
@@ -127,7 +129,8 @@ export async function serve(options: ServeOptions): Promise<Runtime> {
           worker.inFlight++
           try {
             const result = await connectWebSocket({ port: worker.port, target: url.pathname + url.search, headers: upstreamHeaders(headers),
-              signal: AbortSignal.any([request.signal, deadline]), maxMessageBytes: limits.maxMessageBytes, closeTimeoutMs: shutdownTimeout })
+              signal: AbortSignal.any([request.signal, deadline]), maxMessageBytes: limits.maxMessageBytes, maxBufferedBytes: limits.maxBufferedBytes,
+              closeTimeoutMs: shutdownTimeout })
             if (!('relay' in result)) return result.status < 200 ? reject(502, 'UPSTREAM_ERROR') : new Response(result.body, { status: result.status, headers: result.headers })
             const { relay } = result
             if (stopping || worker.draining || worker.exited) { relay.abort(); return reject(503, stopping ? 'SHUTTING_DOWN' : 'CONTEXT_UNAVAILABLE') }
@@ -210,7 +213,8 @@ export async function serve(options: ServeOptions): Promise<Runtime> {
         stopping = true; control?.close(); controller.beginClose()
         for (const relay of relays) relay.goAway()
         stopPromise = (async () => {
-          // Bun 1.3.13 never settles a graceful stop() once the server has upgraded a WebSocket; the forced stop below does.
+          // Bun 1.3.13: a graceful stop() never settles once the server has upgraded a WebSocket, and a forced
+          // stop() hangs after a server-initiated close unless a graceful stop() ran first. Keep this order.
           gateway.stop(false).catch(() => {})
           try { await controller.close() } finally { await gateway.stop(true); await adminServer?.stop(true) }
         })()
@@ -219,7 +223,9 @@ export async function serve(options: ServeOptions): Promise<Runtime> {
     }
   } catch (error) {
     control?.close()
+    for (const relay of relays) relay.goAway()
     await admin?.stop(true)
+    server?.stop(false).catch(() => {}) // Same Bun stop order as Runtime.stop().
     await server?.stop(true)
     try { await controller.close() } catch (cleanupError) {
       if (error instanceof MonoripperError && error.code === 'SHUTTING_DOWN') throw cleanupError

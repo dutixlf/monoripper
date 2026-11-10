@@ -1,0 +1,11 @@
+{
+  "default": [{ "type": "reject" }],
+  "transports": {
+    "docker": {
+      "docker.io/crossbario/autobahn-testsuite": [{ "type": "insecureAcceptAnything" }]
+    },
+    "containers-storage": {
+      "": [{ "type": "insecureAcceptAnything" }]
+    }
+  }
+}

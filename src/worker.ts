@@ -9,7 +9,7 @@ export interface WorkerSpec {
   token: string
   maxRequestBodyBytes: number
   shutdownTimeoutMs?: number
-  websocket: { maxMessageBytes: number; idleTimeoutSeconds: number }
+  websocket: { maxMessageBytes: number; idleTimeoutSeconds: number; maxBufferedBytes: number }
 }
 
 let app: AnyElysia | undefined
@@ -100,8 +100,10 @@ async function start(spec: WorkerSpec): Promise<void> {
   app.event.start = []
   app.event.stop = []
   app.listen({ hostname: '127.0.0.1', port: 0, maxRequestBodySize: spec.maxRequestBodyBytes,
-    // Limits only: Elysia merges its own .ws() dispatch handlers into this object.
-    websocket: { maxPayloadLength: spec.websocket.maxMessageBytes, idleTimeout: spec.websocket.idleTimeoutSeconds, perMessageDeflate: false } as Bun.WebSocketHandler<unknown> })
+    // Limits only: Elysia merges its own .ws() dispatch handlers into this object. A socket whose sends outrun
+    // the gateway beyond maxBufferedBytes closes instead of growing without bound or dropping messages.
+    websocket: { maxPayloadLength: spec.websocket.maxMessageBytes, idleTimeout: spec.websocket.idleTimeoutSeconds, perMessageDeflate: false,
+      backpressureLimit: spec.websocket.maxBufferedBytes, closeOnBackpressureLimit: true } as Bun.WebSocketHandler<unknown> })
   for (const hook of startHooks) await hook.fn(app)
   if (stopping) throw new Error('Stopped during startup')
   send({ type: 'ready', token: spec.token, port: app.server!.port, pid: process.pid })

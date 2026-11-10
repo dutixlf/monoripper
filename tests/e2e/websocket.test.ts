@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { defineApp, monoripper, type Runtime, type ServeOptions } from '../../src/index'
 import exampleApp from '../../examples/websocket/app'
+import { clientFrame } from '../../src/websocket'
 
 const root = join(import.meta.dir, '../fixtures/local')
 const liveApp = defineApp({ project: 'websocket-test', contexts: {
@@ -9,7 +10,7 @@ const liveApp = defineApp({ project: 'websocket-test', contexts: {
 } })
 const start = (extra: Partial<ServeOptions> = {}) => monoripper.serve({
   root, app: liveApp, initial: { live: { replicas: 1 } },
-  http: { port: 0, websocket: { maxMessageBytes: 64 * 1024, maxConnections: 8 } },
+  http: { port: 0, websocket: { maxMessageBytes: 64 * 1024, maxConnections: 8, maxBufferedBytes: 32 * 1024 * 1024 } },
   lifecycle: { requestTimeoutMs: 200, shutdownTimeoutMs: 2000 }, recovery: { maxRestarts: 5, backoffMs: 10 }, ...extra,
 })
 
@@ -86,7 +87,7 @@ async function rawClient(target: Runtime, path: string, headers = '') {
   } })
   socket.write(`GET ${path} HTTP/1.1\r\nHost: ${target.url.host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n${headers}\r\n`)
   for (let attempt = 0; attempt < 200 && !texts.length; attempt++) await Bun.sleep(10)
-  return { first: texts[0], closeCode, end: () => socket.terminate() }
+  return { first: texts[0], closeCode, end: () => socket.terminate(), send: (data: Uint8Array) => socket.write(data), pause: () => socket.pause() }
 }
 
 test('text and binary echo through the gateway and outlive the request timeout', async () => {
@@ -292,4 +293,45 @@ test('the WebSocket example broadcasts HTTP-triggered changes to subscribers', a
     expect(JSON.parse(await client.next() as string)).toEqual({ type: 'servers.changed', reason: 'added' })
     client.ws.close()
   } finally { await example.stop() }
+})
+
+test('idle sockets survive past idleTimeoutSeconds because both legs answer pings', async () => {
+  const idle = await start({ http: { port: 0, websocket: { idleTimeoutSeconds: 1 } } })
+  try {
+    const client = connect(idle, '/live/echo')
+    expect(await client.next()).toBe('ready')
+    await Bun.sleep(3500)
+    client.ws.send('awake')
+    expect(await client.next()).toBe('awake')
+    client.ws.close()
+  } finally { await idle.stop() }
+}, 10_000)
+
+test('trusted proxies keep X-Forwarded-For and resolve the client address', async () => {
+  const proxied = await start({ http: { port: 0, trustedProxies: ['127.0.0.1'] } })
+  try {
+    const client = connect(proxied, '/live/info', { headers: { 'x-forwarded-for': '203.0.113.9' } })
+    const info = JSON.parse(await client.next() as string)
+    expect([info.forwardedFor, info.client]).toEqual(['203.0.113.9', '203.0.113.9'])
+    client.ws.close()
+  } finally { await proxied.stop() }
+})
+
+test('a client that stops reading is closed at maxBufferedBytes and the gateway keeps serving', async () => {
+  const bounded = await start({ http: { port: 0, websocket: { maxMessageBytes: 64 * 1024, maxBufferedBytes: 256 * 1024 } }, admin: { port: 0 } })
+  try {
+    const stalled = await rawClient(bounded, '/live/echo')
+    expect(stalled.first).toBe('ready')
+    stalled.send(clientFrame(1, new TextEncoder().encode('flood:400:60000')))
+    stalled.pause()
+    let text = ''
+    for (let attempt = 0; attempt < 100 && !/monoripper_websocket_connections\{context="live"\} 0/.test(text); attempt++) {
+      await Bun.sleep(50)
+      text = await fetch(new URL('/-/metrics', bounded.adminUrl)).then(r => r.text())
+    }
+    expect(text).toContain('monoripper_websocket_connections{context="live"} 0')
+    expect(text).toContain('monoripper_websocket_closed_total{context="live",reason="backpressure"} 1')
+    expect((await fetch(new URL('/live/pid', bounded.url))).status).toBe(200)
+    stalled.end()
+  } finally { await bounded.stop() }
 })

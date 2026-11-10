@@ -15,7 +15,9 @@ export interface ManagedWorker {
 }
 export function websocketLimits(options: ServeOptions) {
   const ws = options.http?.websocket
-  return { maxMessageBytes: ws?.maxMessageBytes ?? 1024 * 1024, maxConnections: ws?.maxConnections ?? 1024, idleTimeoutSeconds: ws?.idleTimeoutSeconds ?? 120 }
+  const maxMessageBytes = ws?.maxMessageBytes ?? 1024 * 1024
+  return { maxMessageBytes, maxConnections: ws?.maxConnections ?? 1024, idleTimeoutSeconds: ws?.idleTimeoutSeconds ?? 120,
+    maxBufferedBytes: ws?.maxBufferedBytes ?? Math.min(maxMessageBytes * 4, 0x7fffffff) }
 }
 export async function startWorker(context: string, app: AppDefinition, options: ServeOptions,
   onExit: (worker: ManagedWorker) => void, signal: AbortSignal): Promise<ManagedWorker> {

@@ -4,14 +4,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { connectControl, publishRelease, startRegistry, type ControlClient, type Registry } from '../../src/index'
 import { buildRelease, caFile, clusterApp, freePort, launchCli, tls, token } from '../helpers/releases'
-import { until } from '../helpers/control'
+import { processStart, sameProcessAlive, until } from '../helpers/control'
 
 const names = { read: 'RECOVERY_REGISTRY_READ', write: 'RECOVERY_REGISTRY_WRITE', control: 'RECOVERY_CONTROL_TOKEN', cluster: 'RECOVERY_CLUSTER_TOKEN' }
 const secrets = { read: token(), write: token(), control: token(), cluster: token() }
 const registryPort = freePort()
 let directory: string, registry: Registry
 const digests: Record<string, string> = {}
-const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+const starts = new Map<number, string | undefined>()
+const alive = (pid: number) => { if (!starts.has(pid)) starts.set(pid, processStart(pid)); return sameProcessAlive(pid, starts.get(pid)) }
 const startStore = () => startRegistry({ dataDir: join(directory, 'registry'), http: { port: registryPort }, projects: { shop: { readTokenEnv: names.read, writeTokenEnv: names.write } } })
 
 beforeAll(async () => {

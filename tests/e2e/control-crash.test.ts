@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { connectControl, type ControlClient } from '../../src/index'
-import { app, root, until } from '../helpers/control'
+import { app, processStart, root, sameProcessAlive, until } from '../helpers/control'
 
 const projectRoot = join(import.meta.dir, '../..')
 async function launch(config: string) {
@@ -51,6 +51,7 @@ test('SIGKILL releases writer lock; accepted operation replays and keeps its req
     const accepted = await client.setContext(input)
     await until(() => Bun.file(pidFile).exists())
     const oldWorker = Number(await readFile(pidFile, 'utf8'))
+    const oldStart = processStart(oldWorker)
     server.child.kill('SIGKILL'); await server.child.exited; client.close()
     await rm(gate)
     server = await launch(config)
@@ -58,7 +59,7 @@ test('SIGKILL releases writer lock; accepted operation replays and keeps its req
     expect((await client.setContext(input)).id).toBe(accepted.id)
     expect((await client.waitOperation(accepted.id)).phase).toBe('succeeded')
     expect((await client.getStatus()).contexts.find(context => context.name === 'api')?.readyReplicas).toBe(1)
-    await until(() => { try { process.kill(oldWorker, 0); return false } catch { return true } })
+    await until(() => !sameProcessAlive(oldWorker, oldStart))
     expect((await fetch(new URL('/api/pid', server.info.url)).then(r => r.json())).pid).not.toBe(oldWorker)
     expect(await readFile(join(directory, 'state/state.json'), 'utf8')).not.toMatch(/"pid"|"port"/)
     const cli = Bun.spawn([process.execPath, 'src/cli.ts', 'scale', '--controller', server.info.controlAddress, '--project', app.project,

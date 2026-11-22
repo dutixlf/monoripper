@@ -155,8 +155,11 @@ rec {
       touch $out
     '';
     cli = runCommand "monoripper-check-cli" { } ''
-      ${cli}/bin/monoripper --help | grep -q 'monoripper serve'
-      tar -tzf ${tarball}/monoripper.tgz | grep -q 'package/dist/cli.js'
+      # Capture first: grep -q exits early, which fails the producer under pipefail.
+      ${cli}/bin/monoripper --help > help.txt
+      grep -q 'monoripper serve' help.txt
+      tar -tzf ${tarball}/monoripper.tgz > files.txt
+      grep -q 'package/dist/cli.js' files.txt
       touch $out
     '';
   };

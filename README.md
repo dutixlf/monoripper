@@ -243,7 +243,7 @@ The PostgreSQL compatibility test requires a non-root user. The native postinsta
 Other platforms are unverified. They can require permission for the corresponding native package.
 Control tests exercise real SetContext/GetStatus/GetOperation/SetAutoscale.
 After build, create a local npm archive with `bun pm pack --ignore-scripts --destination /tmp/monoripper-package`.
-This command publishes nothing. The product license is undecided. `UNLICENSED` is intentional until the owner chooses one.
+This command publishes nothing. Monoripper is distributed under the MIT license (see `LICENSE`).
 
 ### Nix
 

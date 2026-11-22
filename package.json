@@ -3,7 +3,7 @@
   "version": "0.1.0-prototype",
   "description": "Run selected Elysia application contexts in isolated Bun processes.",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "packageManager": "bun@1.3.13",
   "engines": {
     "bun": ">=1.3.13"
@@ -20,7 +20,8 @@
   "files": [
     "dist",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "bun test tests",

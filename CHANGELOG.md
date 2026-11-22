@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0-prototype (unreleased, unpublished)
+## 0.1.0-prototype
 
 First prototype of the full release plan (e01–e03). All APIs are provisional. Automated checks pass; user acceptance is pending.
 
@@ -40,4 +40,4 @@ First prototype of the full release plan (e01–e03). All APIs are provisional. 
 - State files move to schema 2 on first open. Earlier builds cannot read them.
 - `SetAutoscale` now takes a context and policy and returns the policy; it previously returned `UNIMPLEMENTED` only.
 - Source-mode types are unchanged; release mode adds `ReleaseRuntimeConfig`, `ReleaseServeOptions` and `loadRuntimeConfig`.
-- The license is still undecided (`UNLICENSED`).
+- Monoripper is distributed under the MIT license.

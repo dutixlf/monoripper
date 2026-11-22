@@ -46,7 +46,7 @@ implementation_decisions:
   - State schema 2 adds releases/serving/lastGood/autoscale; schema 1 files migrate on open (older binaries cannot read schema 2).
 pending_approval:
   - User UAT of the local, container, release and cluster examples. Automated checks do not substitute for user acceptance.
-  - License choice (package.json stays UNLICENSED), npm publication and pushing feat/release-readiness require the user.
+  - npm publication is pending separate authorization and an npm account. The user approved MIT, landing on main, a Git release tag, and the Hitori vendor update.
 blockers: []
 commit_policy: Commit verified stable checkpoints only. Check RED tests without separate failing commits.
 environment:
@@ -94,6 +94,6 @@ validation:
   line_coverage_instrumented_process_percent: 98.29
 handoff:
   next_skill: verify-work
-  next_action: User UAT of examples/local, examples/container, examples/releases and examples/cluster; then license choice, push and optional npm publication.
+  next_action: Verify the MIT-licensed package against Hitori API, then land and tag the verified release. npm publication remains separate.
   entrypoint: specs/epics/e03-cluster/e03s03-autoscaling.md
   gate: e01_e03_automated_passed_user_uat_pending

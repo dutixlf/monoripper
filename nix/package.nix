@@ -24,6 +24,8 @@ let
       ../tsconfig.json
       ../tsconfig.build.json
       ../README.md
+      ../CHANGELOG.md
+      ../LICENSE
       ../src
       ../tests
       ../scripts
@@ -134,12 +136,13 @@ rec {
     installPhase = ''
       runHook preInstall
       mkdir -p $out/lib/monoripper $out/bin
-      cp -r dist node_modules package.json README.md $out/lib/monoripper/
+      cp -r dist node_modules package.json README.md CHANGELOG.md LICENSE $out/lib/monoripper/
       makeWrapper ${lib.getExe bun} $out/bin/monoripper --add-flags $out/lib/monoripper/dist/cli.js
       runHook postInstall
     '';
     meta = {
       description = manifest.description;
+      license = lib.licenses.mit;
       mainProgram = "monoripper";
       platforms = lib.platforms.linux;
     };
@@ -159,7 +162,9 @@ rec {
       ${cli}/bin/monoripper --help > help.txt
       grep -q 'monoripper serve' help.txt
       tar -tzf ${tarball}/monoripper.tgz > files.txt
-      grep -q 'package/dist/cli.js' files.txt
+      grep -Fxq 'package/dist/cli.js' files.txt
+      grep -Fxq 'package/LICENSE' files.txt
+      grep -Fxq 'package/CHANGELOG.md' files.txt
       touch $out
     '';
   };

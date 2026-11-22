@@ -14,7 +14,9 @@ try {
   const listing = Bun.spawn(['tar', '-tzf', join(temp, 'monoripper.tgz')], { stdout: 'pipe', stderr: 'inherit' })
   const files = (await new Response(listing.stdout).text()).trim().split('\n')
   if (await listing.exited !== 0 || !files.length) throw new Error('Cannot inspect package archive')
-  if (files.some(file => file !== 'package/package.json' && file !== 'package/README.md' && file !== 'package/CHANGELOG.md' && !file.startsWith('package/dist/'))) throw new Error('Unexpected source/fixture/config file in package')
+  const rootFiles = ['package/package.json', 'package/README.md', 'package/CHANGELOG.md', 'package/LICENSE']
+  if (files.some(file => !rootFiles.includes(file) && !file.startsWith('package/dist/'))) throw new Error('Unexpected source/fixture/config file in package')
+  if (!files.includes('package/LICENSE')) throw new Error('MIT license missing from package')
   await writeFile(join(temp, 'package.json'), JSON.stringify({ type: 'module', dependencies: { monoripper: './monoripper.tgz' } }))
   await run([process.execPath, 'install', '--ignore-scripts'], temp)
   if (await Bun.file(join(temp, 'node_modules/embedded-postgres/package.json')).exists()) throw new Error('Test database leaked into consumer runtime dependencies')

@@ -6,7 +6,7 @@ const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/\n/g, '\
 const labels = (pairs: Record<string, string>) => '{' + Object.entries(pairs).map(([key, value]) => `${key}="${escape(value)}"`).join(',') + '}'
 
 interface Family { help?: string; type: string; samples: string[] }
-export interface ScrapeTarget { context: string; pid: number; port: number; token: string }
+export interface ScrapeTarget { context: string; pid: number; endpoint: import('./process-worker').Endpoint }
 export interface RuntimeGauges {
   project: string; environment: string; ready: boolean
   contexts: { name: string; desiredReplicas: number; readyReplicas: number; restarts: number; inFlight: number; websockets: number }[]
@@ -89,8 +89,9 @@ export class GatewayMetrics {
 
 async function scrape(target: ScrapeTarget): Promise<string | undefined> {
   try {
-    const response = await fetch(`http://127.0.0.1:${target.port}/`, {
-      headers: { 'x-monoripper-token': target.token, 'x-monoripper-metrics': '1' }, signal: AbortSignal.timeout(2000), proxy: '',
+    const { endpoint } = target
+    const response = await fetch(`${endpoint.tls ? 'https' : 'http'}://${endpoint.hostname.includes(':') ? `[${endpoint.hostname}]` : endpoint.hostname}:${endpoint.port}/`, {
+      headers: { ...endpoint.headers, 'x-monoripper-metrics': '1' }, signal: AbortSignal.timeout(2000), proxy: '', ...(endpoint.tls ? { tls: { ...endpoint.tls } } : {}),
     })
     if (response.status === 204) return ''
     if (response.status !== 200) return undefined

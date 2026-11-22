@@ -10,8 +10,10 @@ import { GatewayMetrics } from './metrics'
 import { WorkerPool } from './worker-pool'
 import { websocketLimits } from './process-worker'
 import { connectWebSocket, type WebSocketRelay } from './websocket'
+import { newTraceId, parseClaims, traceFrom, traceRule } from './request-context'
 import { StateStore } from './state-store'
 import { Controller, type ControllerSource } from './controller'
+import { Cluster } from './cluster'
 import { ReleaseCache } from './release-cache'
 import { inspectRelease } from './release'
 import { validDigest } from './archive'
@@ -22,6 +24,8 @@ export interface Runtime {
   readonly url: URL
   readonly controlAddress?: string
   readonly adminUrl?: URL
+  /** HTTPS endpoint node agents connect to, when `cluster` is configured. */
+  readonly clusterUrl?: URL
   status(): WorkerStatus[]
   getStatus(): ControlStatus
   setContext(input: SetContextRequest): Promise<Operation>
@@ -38,6 +42,7 @@ function resolveApp(app: AppDefinition, root: string): AppDefinition {
     tsconfig: app.tsconfig ? resolve(root, app.tsconfig) : undefined,
   }
 }
+interface Envelope { traceId: string; deadlineMs: number; caller?: string; claims?: Record<string, string>; client?: string }
 type Bootstrap = { project: string; digest: string; archive?: Uint8Array }
 /** `<project>@sha256:<hex>`, a `release.json` written by publish, or a release archive. */
 async function bootstrapRelease(reference: string, root: string): Promise<Bootstrap> {
@@ -58,7 +63,7 @@ async function bootstrapRelease(reference: string, root: string): Promise<Bootst
 
 export async function serve(input: ServeOptions | ReleaseServeOptions): Promise<Runtime> {
   let options = input as RuntimeOptions
-  assertKeys(options, ['app', 'root', 'release', 'registry', 'capacity', 'initial', 'http', 'lifecycle', 'env', 'onDiagnostic', 'control', 'dataDir', 'environment', 'recovery', 'startupSignal', 'admin', 'logging'], 'serve')
+  assertKeys(options, ['app', 'root', 'release', 'registry', 'capacity', 'cluster', 'services', 'autoscale', 'initial', 'http', 'lifecycle', 'env', 'onDiagnostic', 'control', 'dataDir', 'environment', 'recovery', 'startupSignal', 'admin', 'logging'], 'serve')
   validateRuntimeConfig(options)
   if ((options.app === undefined) === (options.release === undefined)) throw new MonoripperError('INVALID_CONFIG', 'Set exactly one of app (source mode) and release (release mode)')
   if (options.app !== undefined) validateApp(options.app)
@@ -69,6 +74,9 @@ export async function serve(input: ServeOptions | ReleaseServeOptions): Promise<
   if (options.onDiagnostic !== undefined && typeof options.onDiagnostic !== 'function') throw new MonoripperError('INVALID_CONFIG', 'onDiagnostic must be a function')
   options = { ...options, ...(options.app ? { app: structuredClone(options.app) } : {}), initial: structuredClone(options.initial),
     ...(options.registry ? { registry: { ...options.registry } } : {}), ...(options.capacity ? { capacity: { ...options.capacity } } : {}),
+    ...(options.cluster ? { cluster: { ...options.cluster, tls: { ...options.cluster.tls } } } : {}),
+    ...(options.services ? { services: { ...options.services, ...(options.services.claims ? { claims: [...options.services.claims] } : {}) } } : {}),
+    ...(options.autoscale ? { autoscale: { ...options.autoscale } } : {}),
     http: { ...options.http, ...(options.http?.trustedProxies ? { trustedProxies: [...options.http.trustedProxies] } : {}),
       ...(options.http?.websocket ? { websocket: { ...options.http.websocket } } : {}) },
     lifecycle: { ...options.lifecycle }, recovery: { ...options.recovery },
@@ -112,8 +120,21 @@ export async function serve(input: ServeOptions | ReleaseServeOptions): Promise<
     store = await StateStore.open({ project: bootstrap.project, environment, directory, initial, initialReleases })
   }
   let controller: Controller
-  const pool = new WorkerPool(options, context => controller.unexpectedExit(context), options.capacity?.maxReplicas ?? 64)
+  let cluster: Cluster | undefined
+  if (options.cluster) {
+    if (source.kind !== 'release') { await store.close(); throw new MonoripperError('INVALID_CONFIG', 'cluster requires release mode') }
+    const credential = process.env[options.cluster.tokenEnv]
+    if (!validToken(credential)) { await store.close(); throw new MonoripperError('INVALID_CONFIG', 'The cluster credential must be 32–512 printable ASCII characters') }
+    const state = store.read()
+    cluster = new Cluster({ ...options.cluster, caFile: resolve(root, options.cluster.caFile),
+      tls: { certFile: resolve(root, options.cluster.tls.certFile), keyFile: resolve(root, options.cluster.tls.keyFile) } },
+      credential, { project: state.project, environment: state.environment },
+      (request, caller) => route(request, undefined, servicesEnvelope(request, caller)).then(response => response ?? publicError(501, 'UPGRADE_NOT_SUPPORTED')),
+      () => controller.capacityChanged())
+  }
+  const pool = new WorkerPool(options, context => controller.unexpectedExit(context), options.capacity?.maxReplicas ?? 64, cluster)
   controller = new Controller(store, pool, options, source)
+  if (cluster) controller.cluster = cluster
   let server: Bun.Server<WebSocketRelay> | undefined
   let control: { address: string; close(): void } | undefined
   let admin: ReturnType<typeof Bun.serve> | undefined
@@ -128,10 +149,108 @@ export async function serve(input: ServeOptions | ReleaseServeOptions): Promise<
   const limits = websocketLimits(options)
   const relays = new Set<WebSocketRelay>()
   let handshakes = 0
+  const allowedClaims = options.services?.claims ?? []
+  /**
+   * Routes one request to a ready replica of its owning context. Public ingress passes a fresh envelope;
+   * services.fetch passes the caller's validated trace, remaining deadline, identity and claims.
+   */
+  async function route(request: Request, peer: string | undefined, envelope: Envelope, gateway?: Bun.Server<WebSocketRelay>): Promise<Response | undefined> {
+    const started = performance.now()
+    let context = '' // Unowned requests have no context label value.
+    const reject = (status: number, code: string) => { metrics.gatewayError(context, code); return publicError(status, code) }
+    const response = await (async (): Promise<Response | undefined> => {
+      if (stopping) return reject(503, 'SHUTTING_DOWN')
+      const upgrade = request.headers.get('upgrade')
+      const websocket = upgrade?.trim().toLowerCase() === 'websocket'
+      if (upgrade !== null && (!websocket || !gateway)) return reject(501, 'UPGRADE_NOT_SUPPORTED')
+      const url = new URL(request.url)
+      if (!validPath(url.pathname)) return reject(400, 'INVALID_PATH')
+      const owner = controller.owner(websocket ? 'GET' : request.method, url.pathname)
+      if (!owner) return reject(404, 'NOT_FOUND')
+      context = owner
+      if (websocket && (request.method !== 'GET' || request.headers.get('sec-websocket-version') !== '13' || !request.headers.get('sec-websocket-key'))) {
+        return reject(400, 'INVALID_UPGRADE')
+      }
+      if (websocket && relays.size + handshakes >= limits.maxConnections) return reject(503, 'WEBSOCKET_LIMIT')
+      const ready = pool.ready(owner)
+      if (!ready.length) return reject(503, 'CONTEXT_UNAVAILABLE')
+      const counter = counters.get(owner) ?? 0
+      counters.set(owner, (counter + 1) % ready.length)
+      const worker = ready[counter % ready.length]!
+      const { endpoint } = worker
+      url.protocol = endpoint.tls ? 'https:' : 'http:'; url.hostname = endpoint.hostname; url.port = String(endpoint.port)
+      const headers = forwardingHeaders(request.headers, true)
+      if (!isTrustedPeer(trusted, peer)) stripForwarding(headers)
+      const client = envelope.client ?? clientAddress(trusted, peer, request.headers)
+      if (client) headers.set('x-monoripper-client-ip', client)
+      const budget = Math.max(1, Math.min(envelope.deadlineMs, requestTimeout))
+      headers.set('x-monoripper-trace-id', envelope.traceId)
+      headers.set('x-monoripper-request-id', crypto.randomUUID())
+      headers.set('x-monoripper-deadline-ms', String(budget))
+      if (envelope.caller) headers.set('x-monoripper-caller', envelope.caller)
+      if (envelope.claims && Object.keys(envelope.claims).length) headers.set('x-monoripper-claims', JSON.stringify(envelope.claims))
+      for (const [name, value] of Object.entries(endpoint.headers)) headers.set(name, value)
+      const deadline = AbortSignal.timeout(budget)
+      if (websocket) {
+        handshakes++
+        worker.inFlight++
+        try {
+          const result = await connectWebSocket({ port: endpoint.port, hostname: endpoint.hostname, ...(endpoint.tls ? { tls: endpoint.tls } : {}),
+            target: url.pathname + url.search, headers,
+            signal: AbortSignal.any([request.signal, deadline]), maxMessageBytes: limits.maxMessageBytes, maxBufferedBytes: limits.maxBufferedBytes,
+            closeTimeoutMs: closeTimeout, idleTimeoutMs: limits.idleTimeoutSeconds * 1000 })
+          if (!('relay' in result)) return result.status < 200 ? reject(502, 'UPSTREAM_ERROR') : new Response(result.body, { status: result.status, headers: result.headers })
+          const { relay } = result
+          if (stopping || worker.draining || worker.exited) { relay.abort(); return reject(503, stopping ? 'SHUTTING_DOWN' : 'CONTEXT_UNAVAILABLE') }
+          // Bun runs open() inside upgrade(), and the relay can finish there; register first so onDone always unregisters.
+          relays.add(relay); worker.sockets.add(relay)
+          relay.onDone = reason => { relays.delete(relay); worker.sockets.delete(relay); metrics.websocketClosed(owner, reason) }
+          let upgraded = false
+          try { upgraded = gateway!.upgrade(request, { data: relay, headers: result.headers }) } catch { /* treated as not upgraded */ }
+          if (!upgraded) { relays.delete(relay); worker.sockets.delete(relay); relay.abort(); return reject(400, 'INVALID_UPGRADE') }
+          metrics.websocketOpened(owner)
+          return undefined
+        } catch {
+          return reject(deadline.aborted ? 504 : 502, deadline.aborted ? 'DEADLINE_EXCEEDED' : 'UPSTREAM_ERROR')
+        } finally { handshakes--; worker.inFlight-- }
+      }
+      worker.inFlight++
+      let released = false
+      const release = () => { if (!released) { released = true; worker.inFlight-- } }
+      try {
+        const response = await fetch(url, { method: request.method, headers,
+          body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+          signal: AbortSignal.any([request.signal, deadline]), redirect: 'manual', decompress: false, proxy: '', ...(endpoint.tls ? { tls: { ...endpoint.tls } } : {}) })
+        return new Response(leasedBody(response.body, release), { status: response.status, statusText: response.statusText, headers: forwardingHeaders(response.headers) })
+      } catch {
+        release()
+        return reject(deadline.aborted ? 504 : 502, deadline.aborted ? 'DEADLINE_EXCEEDED' : 'UPSTREAM_ERROR')
+      }
+    })()
+    metrics.observe(context, request.method, response?.status ?? 101, (performance.now() - started) / 1000)
+    return response
+  }
+  /** Envelope of a services.fetch call, after the caller's credential was verified. */
+  const servicesEnvelope = (request: Request, caller: { context: string }): Envelope => {
+    const trace = request.headers.get('x-monoripper-trace-id') ?? ''
+    const remaining = Number(request.headers.get('x-monoripper-deadline-ms'))
+    return { traceId: traceRule.test(trace) ? trace : newTraceId(), deadlineMs: Number.isSafeInteger(remaining) && remaining > 0 ? remaining : requestTimeout,
+      caller: caller.context, claims: parseClaims(request.headers.get('x-monoripper-claims'), allowedClaims) }
+  }
+  // Loopback listener for services.fetch from this process's workers; each worker authenticates with its own credential.
+  const services = Bun.serve({ hostname: '127.0.0.1', port: 0, idleTimeout: 30, maxRequestBodySize: options.http?.maxRequestBodyBytes ?? 16 * 1024 * 1024,
+    fetch(request) {
+      const caller = pool.byServicesToken(request.headers.get('x-monoripper-services-token') ?? '')
+      if (!caller) return publicError(401, 'UNAUTHENTICATED')
+      return route(request, undefined, servicesEnvelope(request, caller)).then(response => response ?? publicError(501, 'UPGRADE_NOT_SUPPORTED'))
+    },
+    error() { return publicError(500, 'INTERNAL_ERROR') } })
+  controller.servicesUrl = services.url.href
   const cancelStartup = () => controller.beginClose()
   options.startupSignal?.addEventListener('abort', cancelStartup, { once: true })
   try {
     assertStarting()
+    cluster?.start()
     await controller.initialize()
     assertStarting()
     server = Bun.serve<WebSocketRelay>({
@@ -147,76 +266,7 @@ export async function serve(input: ServeOptions | ReleaseServeOptions): Promise<
         close(ws, code, reason) { ws.data.clientClosed(code, reason) },
         drain(ws) { ws.data.clientDrained() },
       },
-      async fetch(request, gateway) {
-        const started = performance.now()
-        let context = '' // Unowned requests have no context label value.
-        const reject = (status: number, code: string) => { metrics.gatewayError(context, code); return publicError(status, code) }
-        const response = await (async (): Promise<Response | undefined> => {
-        if (stopping) return reject(503, 'SHUTTING_DOWN')
-        const upgrade = request.headers.get('upgrade')
-        const websocket = upgrade?.trim().toLowerCase() === 'websocket'
-        if (upgrade !== null && !websocket) return reject(501, 'UPGRADE_NOT_SUPPORTED')
-        const url = new URL(request.url)
-        if (!validPath(url.pathname)) return reject(400, 'INVALID_PATH')
-        // ponytail: linear lookups for small apps; index immutable routing snapshots if profiling warrants it.
-        const owner = controller.owner(websocket ? 'GET' : request.method, url.pathname)
-        if (!owner) return reject(404, 'NOT_FOUND')
-        context = owner
-        if (websocket && (request.method !== 'GET' || request.headers.get('sec-websocket-version') !== '13' || !request.headers.get('sec-websocket-key'))) {
-          return reject(400, 'INVALID_UPGRADE')
-        }
-        if (websocket && relays.size + handshakes >= limits.maxConnections) return reject(503, 'WEBSOCKET_LIMIT')
-        const ready = pool.ready(owner)
-        if (!ready.length) return reject(503, 'CONTEXT_UNAVAILABLE')
-        const counter = counters.get(owner) ?? 0
-        counters.set(owner, (counter + 1) % ready.length)
-        const worker = ready[counter % ready.length]!
-        url.protocol = 'http:'; url.hostname = '127.0.0.1'; url.port = String(worker.port)
-        const headers = forwardingHeaders(request.headers, true)
-        const peer = gateway.requestIP(request)?.address
-        if (!isTrustedPeer(trusted, peer)) stripForwarding(headers)
-        const client = clientAddress(trusted, peer, request.headers)
-        if (client) headers.set('x-monoripper-client-ip', client)
-        headers.set('x-monoripper-token', worker.token)
-        const deadline = AbortSignal.timeout(requestTimeout)
-        if (websocket) {
-          handshakes++
-          worker.inFlight++
-          try {
-            const result = await connectWebSocket({ port: worker.port, target: url.pathname + url.search, headers,
-              signal: AbortSignal.any([request.signal, deadline]), maxMessageBytes: limits.maxMessageBytes, maxBufferedBytes: limits.maxBufferedBytes,
-              closeTimeoutMs: closeTimeout, idleTimeoutMs: limits.idleTimeoutSeconds * 1000 })
-            if (!('relay' in result)) return result.status < 200 ? reject(502, 'UPSTREAM_ERROR') : new Response(result.body, { status: result.status, headers: result.headers })
-            const { relay } = result
-            if (stopping || worker.draining || worker.exited) { relay.abort(); return reject(503, stopping ? 'SHUTTING_DOWN' : 'CONTEXT_UNAVAILABLE') }
-            // Bun runs open() inside upgrade(), and the relay can finish there; register first so onDone always unregisters.
-            relays.add(relay); worker.sockets.add(relay)
-            relay.onDone = reason => { relays.delete(relay); worker.sockets.delete(relay); metrics.websocketClosed(owner, reason) }
-            let upgraded = false
-            try { upgraded = gateway.upgrade(request, { data: relay, headers: result.headers }) } catch { /* treated as not upgraded */ }
-            if (!upgraded) { relays.delete(relay); worker.sockets.delete(relay); relay.abort(); return reject(400, 'INVALID_UPGRADE') }
-            metrics.websocketOpened(owner)
-            return undefined
-          } catch {
-            return reject(deadline.aborted ? 504 : 502, deadline.aborted ? 'DEADLINE_EXCEEDED' : 'UPSTREAM_ERROR')
-          } finally { handshakes--; worker.inFlight-- }
-        }
-        worker.inFlight++
-        let released = false
-        const release = () => { if (!released) { released = true; worker.inFlight-- } }
-        try {
-          const response = await fetch(url, { method: request.method, headers,
-            body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
-            signal: AbortSignal.any([request.signal, deadline]), redirect: 'manual', decompress: false, proxy: '' })
-          return new Response(leasedBody(response.body, release), { status: response.status, statusText: response.statusText, headers: forwardingHeaders(response.headers) })
-        } catch {
-          release()
-          return reject(deadline.aborted ? 504 : 502, deadline.aborted ? 'DEADLINE_EXCEEDED' : 'UPSTREAM_ERROR')
-        }
-        })()
-        metrics.observe(context, request.method, response?.status ?? 101, (performance.now() - started) / 1000)
-        return response
-      },
+      fetch: (request, gateway) => route(request, gateway.requestIP(request)?.address, { traceId: traceFrom(request.headers), deadlineMs: requestTimeout }, gateway),
       error() { return publicError(500, 'INTERNAL_ERROR') },
     })
     if (options.control) {
@@ -255,6 +305,7 @@ export async function serve(input: ServeOptions | ReleaseServeOptions): Promise<
     const adminServer = admin
     return {
       url: new URL(gateway.url), ...(control ? { controlAddress: control.address } : {}), ...(adminServer ? { adminUrl: new URL(adminServer.url) } : {}),
+      ...(cluster?.url ? { clusterUrl: cluster.url } : {}),
       status: () => pool.status(), getStatus: () => controller.status(), setContext: input => controller.set(input), getOperation: id => controller.operation(id),
       async waitOperation(id, timeoutMs = 30_000) {
         if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 0x7fffffff) throw new MonoripperError('INVALID_ARGUMENT', 'Invalid operation wait timeout')
@@ -274,7 +325,7 @@ export async function serve(input: ServeOptions | ReleaseServeOptions): Promise<
           // Bun 1.3.13: a graceful stop() never settles once the server has upgraded a WebSocket, and a forced
           // stop() hangs after a server-initiated close unless a graceful stop() ran first. Keep this order.
           gateway.stop(false).catch(() => {})
-          try { await controller.close() } finally { await gateway.stop(true); await adminServer?.stop(true) }
+          try { await controller.close() } finally { await gateway.stop(true); await adminServer?.stop(true); await services.stop(true); await cluster?.stop() }
         })()
         return stopPromise
       },
@@ -283,6 +334,8 @@ export async function serve(input: ServeOptions | ReleaseServeOptions): Promise<
     control?.close()
     for (const relay of relays) relay.goAway()
     await admin?.stop(true)
+    await services.stop(true)
+    await cluster?.stop()
     server?.stop(false).catch(() => {}) // Same Bun stop order as Runtime.stop().
     await server?.stop(true)
     try { await controller.close() } catch (cleanupError) {

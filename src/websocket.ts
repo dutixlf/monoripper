@@ -14,7 +14,11 @@ const bodyOnly = ['expect', 'content-length', 'transfer-encoding']
 export type CloseReason = 'client' | 'upstream' | 'going_away' | 'upstream_lost' | 'protocol_error' | 'message_too_big' | 'backpressure' | 'internal_error'
 export interface Rejected { status: number; headers: Headers; body: Uint8Array<ArrayBuffer> | null }
 export interface RelayLimits { maxMessageBytes: number; maxBufferedBytes: number; closeTimeoutMs: number; idleTimeoutMs: number }
-export interface ConnectOptions extends RelayLimits { port: number; target: string; headers: Headers; signal: AbortSignal }
+export interface ConnectOptions extends RelayLimits {
+  port: number; target: string; headers: Headers; signal: AbortSignal
+  /** Defaults to the loopback replica; a node agent is reached by hostname over TLS. */
+  hostname?: string; tls?: { ca?: string; serverName?: string }
+}
 /** The replica connection; Bun's TCP Socket satisfies it. */
 export interface UpstreamSocket { write(data: Uint8Array | string): number; end(): void; terminate(): void; pause(): void; resume(): void }
 /** The accepted client; Bun's ServerWebSocket satisfies it. */
@@ -224,7 +228,15 @@ export async function connectWebSocket(options: ConnectOptions): Promise<{ relay
   options.signal.addEventListener('abort', abort, { once: true })
   try {
     if (options.signal.aborted) throw new Error('Upstream handshake aborted')
-    socketRef = await Bun.connect({ hostname: '127.0.0.1', port: options.port, socket: {
+    const hostname = options.hostname ?? '127.0.0.1'
+    const lines = [`GET ${options.target} HTTP/1.1`, `Host: ${hostname.includes(':') ? `[${hostname}]` : hostname}:${options.port}`, 'Upgrade: websocket', 'Connection: Upgrade',
+      `Sec-WebSocket-Key: ${key}`, 'Sec-WebSocket-Version: 13']
+    // End-to-end request headers only: the client's key/extensions and body framing never reach the replica.
+    for (const [name, value] of options.headers) if (!handshakeOnly.includes(name) && !bodyOnly.includes(name)) lines.push(`${name}: ${value}`)
+    const request = lines.join('\r\n') + '\r\n\r\n'
+    // Written from open(): on a TLS socket, bytes written before the handshake completes are lost.
+    socketRef = await Bun.connect({ hostname, port: options.port, ...(options.tls ? { tls: { ...options.tls } } : {}), socket: {
+      open(socket) { socket.write(request) },
       data(socket, chunk) {
         if (relay) { relay.receive(chunk); return }
         try { onHead(socket, chunk) } catch { fail('Malformed upstream handshake') }
@@ -233,13 +245,9 @@ export async function connectWebSocket(options: ConnectOptions): Promise<{ relay
       end(socket) { socket.end() },
       close() { if (relay) relay.lost(); else if (rejected) finishRejected(); else fail('Upstream closed during handshake') },
       error() { if (relay) relay.lost(); else fail('Upstream error during handshake') },
+      connectError() { fail('Upstream connection failed') },
     } })
     if (options.signal.aborted) abort()
-    const lines = [`GET ${options.target} HTTP/1.1`, `Host: 127.0.0.1:${options.port}`, 'Upgrade: websocket', 'Connection: Upgrade',
-      `Sec-WebSocket-Key: ${key}`, 'Sec-WebSocket-Version: 13']
-    // End-to-end request headers only: the client's key/extensions and body framing never reach the replica.
-    for (const [name, value] of options.headers) if (!handshakeOnly.includes(name) && !bodyOnly.includes(name)) lines.push(`${name}: ${value}`)
-    socketRef.write(lines.join('\r\n') + '\r\n\r\n')
     return await result
   } finally { options.signal.removeEventListener('abort', abort) }
 }

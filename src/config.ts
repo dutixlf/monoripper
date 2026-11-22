@@ -33,9 +33,28 @@ export function validateRuntimeConfig(config: Settings): void {
     if (typeof config.registry.url !== 'string' || typeof config.registry.tokenEnv !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(config.registry.tokenEnv)) throw new MonoripperError('INVALID_CONFIG', 'registry needs url and tokenEnv')
     if (config.registry.caFile !== undefined && (typeof config.registry.caFile !== 'string' || !config.registry.caFile)) throw new MonoripperError('INVALID_CONFIG', 'Invalid registry.caFile')
   }
+  if (config.services !== undefined) {
+    assertKeys(config.services, ['claims'], 'services')
+    if (config.services.claims !== undefined && (!Array.isArray(config.services.claims) || config.services.claims.length > 32
+      || config.services.claims.some(name => typeof name !== 'string' || !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(name)))) throw new MonoripperError('INVALID_CONFIG', 'services.claims must list up to 32 claim names')
+  }
+  if (config.autoscale !== undefined) {
+    assertKeys(config.autoscale, ['intervalMs', 'upWindowMs', 'downWindowMs', 'cooldownMs', 'maxStep'], 'autoscale')
+    for (const [name, value] of Object.entries(config.autoscale)) positive(value, `autoscale.${name}`)
+  }
+  if (config.cluster !== undefined) {
+    assertKeys(config.cluster, ['host', 'port', 'tls', 'caFile', 'tokenEnv', 'heartbeatTimeoutMs'], 'cluster')
+    assertKeys(config.cluster.tls, ['certFile', 'keyFile'], 'cluster.tls')
+    if (typeof config.cluster.tls.certFile !== 'string' || typeof config.cluster.tls.keyFile !== 'string' || typeof config.cluster.caFile !== 'string') throw new MonoripperError('INVALID_CONFIG', 'cluster needs tls.certFile, tls.keyFile and caFile')
+    if (typeof config.cluster.tokenEnv !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(config.cluster.tokenEnv)) throw new MonoripperError('INVALID_CONFIG', 'cluster.tokenEnv must name a credential environment variable')
+    if (config.cluster.host !== undefined && (typeof config.cluster.host !== 'string' || !config.cluster.host)) throw new MonoripperError('INVALID_CONFIG', 'Invalid cluster.host')
+    positive(config.cluster.port, 'cluster.port', true)
+    if ((config.cluster.port ?? 0) > 65535) throw new MonoripperError('INVALID_CONFIG', 'Invalid cluster.port')
+    positive(config.cluster.heartbeatTimeoutMs, 'cluster.heartbeatTimeoutMs')
+  }
   if (config.capacity !== undefined) {
     assertKeys(config.capacity, ['maxReplicas'], 'capacity')
-    positive(config.capacity.maxReplicas, 'capacity.maxReplicas')
+    positive(config.capacity.maxReplicas, 'capacity.maxReplicas', true)
     if ((config.capacity.maxReplicas ?? 0) > 64) throw new MonoripperError('INVALID_CONFIG', 'capacity.maxReplicas exceeds 64')
   }
   if (config.control !== undefined) {
@@ -134,7 +153,7 @@ export async function loadConfig(filename: string, overrides: Partial<RuntimeSet
 export async function loadRuntimeConfig(filename: string, overrides: Partial<RuntimeSettings> = {}): Promise<ServeOptions | ReleaseServeOptions> {
   const path = resolve(filename)
   const original = (await import(pathToFileURL(path).href)).default as RuntimeConfig | ReleaseRuntimeConfig
-  const keys = ['app', 'release', 'registry', 'capacity', 'initial', 'http', 'lifecycle', 'env', 'recovery', 'environment', 'dataDir', 'control', 'admin', 'logging']
+  const keys = ['app', 'release', 'registry', 'capacity', 'cluster', 'services', 'autoscale', 'initial', 'http', 'lifecycle', 'env', 'recovery', 'environment', 'dataDir', 'control', 'admin', 'logging']
   assertKeys(original, keys, 'config')
   validateRuntimeConfig(original)
   assertKeys(overrides, keys, 'override')
@@ -154,16 +173,17 @@ export async function loadRuntimeConfig(filename: string, overrides: Partial<Run
   const base = dirname(path)
   if ((config.app === undefined) === (config.release === undefined)) throw new MonoripperError('INVALID_CONFIG', 'Set exactly one of config.app (source mode) and config.release (release mode)')
   if (config.app !== undefined && (typeof config.app !== 'string' || !config.app)) throw new MonoripperError('INVALID_CONFIG', 'config.app must be a manifest path')
-  if (config.app !== undefined && config.registry) throw new MonoripperError('INVALID_CONFIG', 'registry applies to release mode only')
+  if (config.app !== undefined && (config.registry || config.cluster)) throw new MonoripperError('INVALID_CONFIG', 'registry and cluster apply to release mode only')
   const reference = config.release as string | undefined
   const files = {
     ...(reference && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}@sha256:/.test(reference) ? { release: resolve(base, reference) } : {}),
     ...(config.registry?.caFile ? { registry: { ...config.registry, caFile: resolve(base, config.registry.caFile) } } : {}),
+    ...(config.cluster ? { cluster: { ...config.cluster, caFile: resolve(base, config.cluster.caFile), tls: { certFile: resolve(base, config.cluster.tls.certFile), keyFile: resolve(base, config.cluster.tls.keyFile) } } } : {}),
     ...(config.control?.tls ? { control: { ...config.control, tls: { certFile: resolve(base, config.control.tls.certFile), keyFile: resolve(base, config.control.tls.keyFile) } } } : {}),
     ...(config.dataDir ? { dataDir: resolve(base, config.dataDir) } : {}),
   }
   const { app: manifest, ...rest } = config
   if (manifest === undefined) return { ...rest, ...files, release: files.release ?? reference!, root: base } as ReleaseServeOptions
-  const { release: _release, registry: _registry, ...source } = { ...rest, ...files }
+  const { release: _release, registry: _registry, cluster: _cluster, ...source } = { ...rest, ...files }
   return { ...source, ...await loadApp(resolve(base, manifest as string)) }
 }

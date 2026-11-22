@@ -1,39 +1,65 @@
 import type { RuntimeOptions } from './definitions'
 import { MonoripperError } from './definitions'
-import { startWorker, type ManagedWorker, type WorkerSource } from './process-worker'
+import { startWorker, websocketLimits, type ManagedWorker, type WorkerSource } from './process-worker'
+import type { AssignmentSettings, Cluster } from './cluster'
 
 /** Owns processes and request leases; controller owns desired counts and serialization. */
 export class WorkerPool {
   private workers: ManagedWorker[] = []
-  private starting = 0
+  private localStarting = 0
   private abort = new AbortController()
-  constructor(private options: RuntimeOptions, private onUnexpectedExit: (context: string) => void, readonly maxReplicas = 64) {}
+  constructor(private options: RuntimeOptions, private onUnexpectedExit: (context: string) => void, readonly maxReplicas = 64, private cluster?: Cluster) {}
   ready(context: string) { return this.workers.filter(worker => worker.context === context && worker.published && !worker.exited && !worker.draining) }
-  targets() { return this.workers.filter(worker => worker.published && !worker.exited && !worker.draining).map(({ context, pid, port, token }) => ({ context, pid, port, token })) }
+  targets() { return this.workers.filter(worker => worker.published && !worker.exited && !worker.draining).map(({ context, pid, endpoint }) => ({ context, pid, endpoint })) }
   inFlight(context: string) { return this.workers.reduce((sum, worker) => sum + (worker.context === context ? worker.inFlight : 0), 0) }
   sockets(context: string) { return this.workers.reduce((sum, worker) => sum + (worker.context === context ? worker.sockets.size : 0), 0) }
-  /** Live processes, including draining replicas and unpublished candidates. */
-  get processes() { return this.workers.length + this.starting }
+  /** Live local processes, including draining replicas and unpublished candidates. */
+  get processes() { return this.workers.filter(worker => worker.node === 'local').length + this.localStarting }
   status() {
     return this.workers.filter(worker => worker.published).map(worker => ({ context: worker.context, pid: worker.pid, ready: !worker.exited && !worker.draining,
-      draining: worker.draining, ...(worker.release ? { release: worker.release } : {}) }))
+      draining: worker.draining, ...(worker.release ? { release: worker.release } : {}), ...(this.cluster ? { node: worker.node } : {}) }))
+  }
+  private settings(): AssignmentSettings {
+    const limits = websocketLimits(this.options)
+    return { startupTimeoutMs: this.options.lifecycle?.startupTimeoutMs ?? 15_000, shutdownTimeoutMs: this.options.lifecycle?.shutdownTimeoutMs ?? 10_000,
+      maxRequestBodyBytes: this.options.http?.maxRequestBodyBytes ?? 16 * 1024 * 1024,
+      websocket: { maxMessageBytes: limits.maxMessageBytes, idleTimeoutSeconds: limits.idleTimeoutSeconds, maxBufferedBytes: limits.maxBufferedBytes } }
+  }
+  /**
+   * Places one replica on the node with the fewest replicas (ties by node id): this process, or a healthy node agent
+   * that runs the release's runtime and has a free slot. An unreachable node is skipped for the next candidate.
+   */
+  private async place(context: string, source: WorkerSource, onExit: (worker: ManagedWorker) => void): Promise<ManagedWorker> {
+    const local = this.processes < this.maxReplicas ? [{ id: 'local', replicas: this.processes }] : []
+    const remote = source.release ? this.cluster?.placeable(source.compatibility) ?? [] : []
+    const choices = [...local, ...remote].sort((a, b) => a.replicas - b.replicas || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    if (!choices.length) throw new MonoripperError('CAPACITY_EXCEEDED', 'No node has replica capacity for another process')
+    let unreachable: unknown
+    for (const choice of choices) {
+      if (choice.id === 'local') {
+        this.localStarting++
+        try { return await startWorker(context, source, this.options, onExit, this.abort.signal) } finally { this.localStarting-- }
+      }
+      if (this.abort.signal.aborted) throw new MonoripperError('SHUTTING_DOWN', 'Worker startup cancelled during shutdown')
+      try { return await this.cluster!.startWorker(choice.id, context, source.release!, this.settings(), onExit) } catch (error) {
+        if (!(error instanceof MonoripperError && error.code === 'NODE_UNREACHABLE')) throw error
+        unreachable = error
+      }
+    }
+    throw unreachable
   }
   cancelStarts() { this.abort.abort() }
+  byServicesToken(token: string) { return token ? this.workers.find(worker => worker.servicesToken === token && !worker.exited) : undefined }
 
   /** Starts ready but unpublished replicas. On any failure the started ones are stopped and the error is rethrown. */
   async startCandidates(context: string, count: number, source: WorkerSource): Promise<ManagedWorker[]> {
     const candidates: ManagedWorker[] = []
     try {
       while (candidates.length < count) {
-        if (this.processes >= this.maxReplicas) throw new MonoripperError('CAPACITY_EXCEEDED', 'No replica capacity left for another process')
-        this.starting++
-        let worker: ManagedWorker
-        try {
-          worker = await startWorker(context, source, this.options, exited => {
-            this.workers = this.workers.filter(item => item !== exited)
-            if (exited.published && !exited.draining) this.onUnexpectedExit(exited.context)
-          }, this.abort.signal)
-        } finally { this.starting-- }
+        const worker = await this.place(context, source, exited => {
+          this.workers = this.workers.filter(item => item !== exited)
+          if (exited.published && !exited.draining) this.onUnexpectedExit(exited.context)
+        })
         candidates.push(worker)
         if (!worker.exited) this.workers.push(worker)
       }

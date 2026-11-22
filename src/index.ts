@@ -3,6 +3,7 @@ export { serve, type Runtime } from './runtime'
 export { checkApp, type ImportDiagnostic } from './check'
 export { loadConfig, loadRuntimeConfig } from './config'
 export { requestClientAddress } from './client-ip'
+export { requestContext, type RequestContext } from './request-context'
 import { serve } from './runtime'
 import type { RegistryConfig } from './registry'
 
@@ -28,5 +29,11 @@ export async function startRegistry(config: RegistryConfig) {
   return (await import('./registry')).startRegistry(config)
 }
 export const defineRegistry = (config: RegistryConfig): RegistryConfig => config
+export type { NodeAgent, NodeConfig } from './node-agent'
+export const defineNode = (config: import('./node-agent').NodeConfig) => config
+/** Runs a node agent in this process; `monoripper node --config` is the CLI equivalent. */
+export async function startNode(config: import('./node-agent').NodeConfig) {
+  return (await import('./node-agent')).startNode(config)
+}
 
 export const monoripper = { serve }

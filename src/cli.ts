@@ -173,7 +173,7 @@ async function main() {
     if (stopping) return
     runtime = await serve({ ...settings, startupSignal: startup.signal })
     if (stopping) { await runtime.stop(); return }
-    console.log(JSON.stringify({ event: 'listening', url: runtime.url.href, workers: runtime.status(), ...(runtime.controlAddress ? { controlAddress: runtime.controlAddress } : {}), ...(runtime.adminUrl ? { adminUrl: runtime.adminUrl.href } : {}) }))
+    console.log(JSON.stringify({ event: 'listening', url: runtime.url.href, workers: runtime.status(), ...(runtime.controlAddress ? { controlAddress: runtime.controlAddress } : {}), ...(runtime.adminUrl ? { adminUrl: runtime.adminUrl.href } : {}), ...(runtime.clusterUrl ? { clusterUrl: runtime.clusterUrl.href } : {}) }))
   } catch (error) {
     if (!(stopping && error instanceof MonoripperError && error.code === 'SHUTTING_DOWN')) throw error
   } finally {
@@ -185,9 +185,14 @@ async function main() {
 async function longRunning(command: 'registry' | 'node', args: string[]) {
   const { values } = parseArgs({ args, strict: true, options: { config: { type: 'string' } } })
   if (!values.config) throw new MonoripperError('INVALID_COMMAND', `Use ${command} --config <file>`)
-  if (command === 'node') throw new MonoripperError('INVALID_COMMAND', 'Not implemented: node')
-  const { loadRegistryConfig, startRegistry } = await import('./registry')
-  const service: { url: URL; stop(): Promise<void> } = await startRegistry(await loadRegistryConfig(values.config))
+  let service: { url: URL; stop(): Promise<void> }
+  if (command === 'registry') {
+    const { loadRegistryConfig, startRegistry } = await import('./registry')
+    service = await startRegistry(await loadRegistryConfig(values.config))
+  } else {
+    const { loadNodeConfig, startNode } = await import('./node-agent')
+    service = await startNode(await loadNodeConfig(values.config))
+  }
   let stopping = false
   const shutdown = () => {
     if (stopping) return

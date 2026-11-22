@@ -16,9 +16,17 @@ export interface AppDefinition {
   tsconfig?: string
 }
 export interface ResourceAccess { get<T = unknown>(name: string): T }
+export interface ServiceFetchInit extends RequestInit {
+  /** The incoming request whose trace and remaining deadline the call inherits. */
+  request?: Request
+  /** Identity claims for the target context; only names allowed by `services.claims` arrive. */
+  claims?: Record<string, string>
+}
+/** Explicit calls to other contexts through the gateway. Paths are routed by ownership like public requests. */
+export interface Services { fetch(path: string, init?: ServiceFetchInit): Promise<Response> }
 export interface ContextDefinition {
   /** `signal` aborts when the replica starts stopping; use it to end background loops started in onStart. */
-  create(input: { app: AnyElysia; resources: ResourceAccess; signal: AbortSignal }): AnyElysia | Promise<AnyElysia>
+  create(input: { app: AnyElysia; resources: ResourceAccess; signal: AbortSignal; services: Services }): AnyElysia | Promise<AnyElysia>
   stop?(): void | Promise<void>
   /** Prometheus text exposition for this replica. The runtime adds `context` and `worker` labels. */
   metrics?(): string | Promise<string>
@@ -44,8 +52,17 @@ export interface ReleaseRuntimeConfig extends RuntimeSettings {
   registry?: { url: string; tokenEnv: string; caFile?: string }
 }
 export interface RuntimeSettings {
-  /** Processes this node may run at once, including draining replicas and deployment candidates. Default and maximum 64. */
+  /** Processes this node may run at once, including draining replicas and deployment candidates. Default and maximum 64; 0 places every replica on node agents. */
   capacity?: { maxReplicas?: number }
+  /**
+   * Multi-node: node agents send heartbeats and `services.fetch` calls here, over HTTPS with one shared cluster credential.
+   * The gateway verifies agent certificates against `caFile`. Release mode only.
+   */
+  cluster?: { host?: string; port?: number; tls: { certFile: string; keyFile: string }; caFile: string; tokenEnv: string; heartbeatTimeoutMs?: number }
+  /** Claim names a context may pass to another context with `services.fetch`. Others are dropped. Default: none. */
+  services?: { claims?: string[] }
+  /** Autoscaler timing. Policies are set per context with SetAutoscale; nothing scales without one. */
+  autoscale?: { intervalMs?: number; upWindowMs?: number; downWindowMs?: number; cooldownMs?: number; maxStep?: number }
   initial: Record<string, { replicas: number }>
   http?: {
     host?: string; port?: number; maxRequestBodyBytes?: number

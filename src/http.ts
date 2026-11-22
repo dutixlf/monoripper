@@ -1,5 +1,15 @@
 const hopByHop = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade']
 
+/** Removes hop-by-hop headers, including those a Connection header names. */
+export function stripHopByHop(headers: Headers): Headers {
+  for (const token of (headers.get('connection') ?? '').split(',')) {
+    const name = token.trim()
+    if (/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(name)) headers.delete(name)
+  }
+  for (const name of hopByHop) headers.delete(name)
+  return headers
+}
+
 export function forwardingHeaders(source: Headers, request = false): Headers {
   const headers = new Headers(source)
   for (const token of (headers.get('connection') ?? '').split(',')) {

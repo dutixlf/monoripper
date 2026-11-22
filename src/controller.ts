@@ -25,6 +25,10 @@ export class Controller {
   private closePromise?: Promise<void>
   /** Ownership of each context's serving release; the gateway reads it on every request. */
   private routing = new Map<string, Ownership[]>()
+  /** Loopback listener for services.fetch from local workers. */
+  servicesUrl?: string
+  /** Node agents, when the runtime runs a cluster. */
+  cluster?: import('./cluster').Cluster
   constructor(readonly store: StateStore, readonly pool: WorkerPool, private options: RuntimeOptions, private source: ControllerSource) {}
 
   get releaseMode() { return this.source.kind === 'release' }
@@ -38,8 +42,25 @@ export class Controller {
         await this.enqueue(() => this.apply(pending.id))
         // Replayed growth can roll back desired state without any old processes still alive.
         const after = this.store.read()
-        if (Object.hasOwn(after.desired, context)) await this.pool.scale(context, after.desired[context]!, await this.workerSource(context))
-      } else await this.pool.scale(context, count, await this.workerSource(context))
+        if (Object.hasOwn(after.desired, context)) await this.coldScale(context, after.desired[context]!)
+      } else await this.coldScale(context, count)
+    }
+  }
+  /** With node agents, missing capacity at startup is not fatal: replicas are placed when nodes connect. */
+  private async coldScale(context: string, count: number) {
+    try { await this.pool.scale(context, count, await this.workerSource(context)) } catch (error) {
+      if (!this.cluster || !(error instanceof MonoripperError && error.code === 'CAPACITY_EXCEEDED')) throw error
+      this.errors.set(context, { code: 'CAPACITY_EXCEEDED', message: 'Waiting for node capacity' })
+    }
+  }
+  /** A node connected: retry contexts below their desired count with a fresh restart budget. */
+  capacityChanged() {
+    if (this.closing) return
+    const state = this.store.read()
+    for (const [context, count] of Object.entries(state.desired)) {
+      if (this.pool.ready(context).length >= count || state.operations.some(operation => operation.context === context && active(operation))) continue
+      this.restarts.set(context, 0)
+      void this.enqueue(() => this.recover(context)).catch(() => {})
     }
   }
 
@@ -60,7 +81,8 @@ export class Controller {
         ...(state.serving[name] ? { servingRelease: state.serving[name] } : {}),
         ...(state.lastGood[name] ? { lastGoodRelease: state.lastGood[name] } : {}),
         ...(state.autoscale[name] ? { autoscale: structuredClone(state.autoscale[name]) } : {}),
-      })) }
+      })),
+      ...(this.cluster ? { nodes: [{ id: 'local', healthy: true, maxReplicas: this.pool.maxReplicas, replicas: this.pool.processes }, ...this.cluster.status()] } : {}) }
   }
   operation(id: string) {
     const operation = this.store.read().operations.find(operation => operation.id === id)
@@ -154,12 +176,13 @@ export class Controller {
     return structuredClone(spec.owns)
   }
   private async workerSource(context: string, release = this.store.read().releases[context]): Promise<WorkerSource> {
-    if (this.source.kind === 'source') return { app: this.source.app, cwd: this.source.root }
+    const services = this.servicesUrl ? { services: this.servicesUrl } : {}
+    if (this.source.kind === 'source') return { app: this.source.app, cwd: this.source.root, ...services }
     const loaded = await this.source.cache.ensure(this.store.read().project, release!)
     if (!loaded.manifest.contexts[context]) throw new MonoripperError('RELEASE_CONTEXT_MISSING', `Release ${release} does not declare context ${context}`)
     const cwd = join(this.source.workRoot, context)
     await mkdir(cwd, { recursive: true, mode: 0o700 })
-    return { app: loaded.app, cwd, release }
+    return { app: loaded.app, cwd, release, compatibility: loaded.manifest.compatibility, ...services }
   }
   private async step(id: string, step: OperationStep) {
     await this.store.update(next => { const op = next.operations.find(op => op.id === id)!; op.step = step; op.updatedAt = Math.max(Date.now(), op.createdAt) })

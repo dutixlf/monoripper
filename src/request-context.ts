@@ -58,6 +58,10 @@ export const services: Services = {
       const url = process.env.MONORIPPER_SERVICES_URL, token = process.env.MONORIPPER_SERVICES_TOKEN
       if (!url || !token) throw new MonoripperError('SERVICES_UNAVAILABLE', 'services.fetch is available inside a running context only')
       if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) throw new MonoripperError('INVALID_ARGUMENT', 'services.fetch takes a path such as /billing/invoices')
+      const endpoint = new URL(url)
+      const target = new URL(path, endpoint)
+      // Check the parsed destination before attaching credentials: URL parsing normalizes separators.
+      if (target.origin !== endpoint.origin) throw new MonoripperError('INVALID_ARGUMENT', 'services.fetch path must stay on the runtime listener')
       const { request, claims, ...rest } = init
       const headers = new Headers(rest.headers)
       for (const name of [...headers.keys()]) if (name.toLowerCase().startsWith('x-monoripper-')) headers.delete(name)
@@ -72,6 +76,6 @@ export const services: Services = {
       }
       if (claims) headers.set('x-monoripper-claims', JSON.stringify(claims))
       const signal = rest.signal && timeout ? AbortSignal.any([rest.signal, timeout]) : rest.signal ?? timeout
-      return fetch(new URL(path, url), { ...rest, headers, redirect: 'manual', proxy: '', ...(signal ? { signal } : {}) })
+      return fetch(target, { ...rest, headers, redirect: 'manual', proxy: '', ...(signal ? { signal } : {}) })
     },
 }

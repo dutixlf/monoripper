@@ -1,0 +1,31 @@
+type: verification
+context: e03 node agents, placement and recovery, request context, autoscaling
+stories: [e03s01, e03s02, e03s03]
+status: automated_passed_awaiting_user_uat
+session_date: '2026-11-23'
+branch: feat/release-readiness
+baseline: 146b9f1
+environment: { host: NixOS Linux amd64, bun: 1.3.13, elysia: 1.4.30, tls: tests/fixtures/tls test CA (key discarded) }
+checks:
+  request_context: { command: bun test tests/e2e/request-context.test.ts, result: passed }
+  two_nodes: { command: bun test tests/e2e/two-nodes.test.ts, result: passed, note: agents as separate CLI processes; untrusted and unreachable agents }
+  node_recovery: { command: bun test tests/e2e/node-recovery.test.ts, result: passed, note: SIGSTOP/SIGCONT partition, registry outage, controller SIGKILL }
+  autoscale_unit: { command: bun test tests/unit/autoscale.test.ts, result: passed, note: fake clock }
+  autoscale_e2e: { command: bun test tests/e2e/autoscale.test.ts, result: passed }
+  runtime: { command: bun test tests, result: passed, tests: 156 }
+manual_walkthrough:
+  by: agent, not the user
+  steps: examples/cluster/README.md controller + node-b, scale to 3 across nodes, round-robin pids, autoscale policy rejects manual scale, stop in either order
+  result: passed after adding graceful agent leave
+findings_fixed_during_work:
+  - TLS WebSocket handshakes were written before the TLS handshake and lost; the request is now written from open().
+  - Agents sent their internal worker id for services calls; they now send the controller-assigned id.
+  - A heartbeat during a start could have stopped the new replica; pending assignments are excluded.
+  - A restarted agent kept stale replicas counted; heartbeats carry a random instance id.
+  - Stopping the agent before the controller failed controller shutdown; agents now announce leave.
+residual_risks:
+  - One shared cluster credential (ADR 0003); a compromised node compromises the cluster.
+  - Partitions can briefly run more processes than desired; no fencing or exactly-once.
+  - No controller or ingress HA. Remote replica metrics are scraped through the agent (verified in two-nodes.test.ts).
+  - Hitori backend WebSocket traffic has not been exercised.
+manual_uat: pending

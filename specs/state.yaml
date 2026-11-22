@@ -1,16 +1,16 @@
 schema_version: 1
 active_flow: verify_work
 workflow_mode: solo-git
-active_epic_id: e01
-active_story_id: e01s04
+active_epic_id: e03
+active_story_id: e03s03
 phase: verify
 implementation_started: true
 vcs:
   kind: git
-  branch: feat/websocket
-  baseline: cfce7e5
+  branch: feat/release-readiness
+  baseline: 146b9f1
   remote: origin
-  note: e01s04 WebSocket work starts from cfce7e5 (nix flake). Not pushed.
+  note: e01s04 is on origin/main (146b9f1). e02/e03 release-readiness work is on feat/release-readiness, local only, not pushed.
 confirmed_decisions:
   - One npm package, Elysia, and Bun.
   - Import linting and explicit errors are sufficient for the prototype.
@@ -21,6 +21,7 @@ confirmed_decisions:
   - Explicit route owns, one controller, and one ingress.
   - One application artifact with independent updates of selected contexts.
   - HTTP first. HA is outside the initial prototype. WebSocket relay added in e01s04 for live updates; endless HTTP streams stay out.
+  - 2026-11-22 the user asked to finish everything before the release autonomously and to be told about breaking changes; e02/e03 were implemented before e01 UAT.
   - Registry mode in the same package, explicit HTTP SDK between contexts, and a phased roadmap.
   - User config files. Different installations/nodes can have different settings.
 implementation_decisions:
@@ -39,8 +40,13 @@ implementation_decisions:
   - The pinned container runs as UID/GID 1000 with read-only root, mounted credential, local state volume and shared cgroup limits.
   - e01s04 relays WebSockets over a raw RFC 6455 client to the replica so refused handshakes keep their status. Upgrades own as GET. Drain/shutdown close 1001, replica exit 1012.
   - e01s04 hardening per user request: guarded relay (1011 internal_error), maxBufferedBytes caps (1013), replica keepalive, Autobahn opt-in gate, Bun quirk canaries, two independent reviews.
+  - e02 releases share Elysia and the SDK with the runtime; own deterministic ustar archive; deploy idempotency key is the intent (ADR 0002).
+  - e03 node agents use one shared cluster credential over TLS verified against a private CA (ADR 0003).
+  - Public types stay compatible: RuntimeConfig/ServeOptions keep app required; release mode uses ReleaseRuntimeConfig/ReleaseServeOptions and loadRuntimeConfig.
+  - State schema 2 adds releases/serving/lastGood/autoscale; schema 1 files migrate on open (older binaries cannot read schema 2).
 pending_approval:
-  - User UAT of the local and container examples. Automated checks do not substitute for user acceptance.
+  - User UAT of the local, container, release and cluster examples. Automated checks do not substitute for user acceptance.
+  - License choice (package.json stays UNLICENSED), npm publication and pushing feat/release-readiness require the user.
 blockers: []
 commit_policy: Commit verified stable checkpoints only. Check RED tests without separate failing commits.
 environment:
@@ -72,7 +78,9 @@ validation:
   elysia_grpc_scale_recover_restore_disable: passed
   elysia_integration_evidence: specs/verifications/elysia-examples.md
   manual_uat: pending
-  bundled_plan_validator: blocked_missing_pyyaml
+  bundled_plan_validator: passed_with_nix_pyyaml_all_capsules
+  e02_evidence: specs/verifications/e02-verify.yaml
+  e03_evidence: specs/verifications/e03-verify.yaml
   evidence: specs/verifications/e01s03-verify.yaml
   container_boundaries: passed_real_rootless_podman
   container_lifecycle: passed_scale_recover_drain_recreate_hardkill
@@ -83,6 +91,6 @@ validation:
   line_coverage_instrumented_process_percent: 98.29
 handoff:
   next_skill: verify-work
-  next_action: User UAT of examples/container/README.md and the local API, then detail e02 registry/releases after e01 acceptance.
-  entrypoint: specs/epics/e01-local-runtime/e01s04-websocket.md
-  gate: e01_automated_passed_user_uat_pending
+  next_action: User UAT of examples/local, examples/container, examples/releases and examples/cluster; then license choice, push and optional npm publication.
+  entrypoint: specs/epics/e03-cluster/e03s03-autoscaling.md
+  gate: e01_e03_automated_passed_user_uat_pending

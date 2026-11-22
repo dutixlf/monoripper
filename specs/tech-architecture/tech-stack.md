@@ -1,6 +1,6 @@
 # Monoripper architecture
 
-Status: target design. e01s01 HTTP and e01s02 local control are implemented. Other roles follow the roadmap.
+Status: all roles in this document (serve, node, registry, client commands) are implemented as a prototype.
 Actual API and limitations: [project README](../../README.md). Purpose: define component boundaries and invariants.
 Basis: [scope](../product/SCOPE_LATEST.yaml), [decisions for agreement](../README.md).
 
@@ -152,12 +152,12 @@ The prototype does not coordinate cron/jobs. Application code must explicitly de
 | Elysia | [OK] user-selected | Pin the major version and verify hooks, plugins, and shutdown |
 | `@grpc/grpc-js` 1.14.6 + proto-loader 0.8.1 | [OK] runtime dependencies | Real protobuf auth/status/scale, crash/replay, and installed package verified |
 | TypeScript compiler API | [OK] import checker candidate | Verify path aliases, re-exports, and dynamic imports |
-| Tar implementation | Undecided | Compare Bun built-ins with a small library. Safe extraction is mandatory |
+| Tar implementation | [OK] own ustar + node:zlib | Deterministic writer; reader rejects links, devices, extensions and unsafe paths before extraction |
 | Storage | Files + JSON snapshot | Verify atomic replacement and recovery after interrupted writes |
 | `embedded-postgres` 18.4.0-beta.17 | [OK] user-selected for tests | PG 18.4, real migrations/CRUD for the full app and tags context verified on Linux x64. Not a production state store |
 
 For e01s01, package.json and bun.lock pin Bun 1.3.13, Elysia 1.4.30, grpc-js 1.14.6 for compatibility tests, and TS 5.9.3.
-Tar handling and the release format are not implemented yet. The Monoripper license is undecided, with UNLICENSED specified.
+Tar handling and the release format are Monoripper's own ([ADR 0002](../adr/0002-release-format.md)). The Monoripper license is undecided, with UNLICENSED specified.
 Context7 was unavailable in the tool catalog. Official documentation through web search provided API verification.
 
 Technical references:

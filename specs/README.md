@@ -1,6 +1,6 @@
 # Monoripper — plan and design
 
-Status: **e01s01/e01s02 local control, e01s03 container lifecycle and e01s04 WebSocket relay implemented, automated checks passed, awaiting UAT**.
+Status: **e01 (local runtime, container, WebSockets), e02 (releases, registry, deploy/rollback) and e03 (node agents, placement, autoscaling) implemented; automated checks passed; awaiting user UAT**.
 Current run instructions and implemented API: [project README](../README.md). Other documents also describe future stages.
 Purpose: record agreements and provide an implementation baseline without repeated design work.
 
@@ -17,7 +17,7 @@ The target audience is small projects that outgrow one process but do not yet ne
 6. [Roadmap](ROADMAP.md) — vertical slices and readiness criteria.
 
 Design examples are **target API / pseudocode**, not a complete list of implemented features.
-serve/check, protobuf control scale/status/operation, persistent desired state, and worker recovery work. Registry/deploy are not implemented yet.
+serve/check/pack/publish/deploy/registry/node, protobuf control (scale, deploy, status, operation, autoscale), persistent desired state, recovery, node agents and autoscaling work.
 Bun 1.3.13, Elysia 1.4.30, gRPC JS 1.14.6, and TypeScript 5.9.3 are verified and pinned.
 
 ## Confirmed decisions
@@ -53,7 +53,7 @@ Application/release descriptions, local node settings, and persistent desired st
 Explicit TS/JS config is implemented: defaults → config → explicit CLI overrides, without shared mutable configuration.
 Controller/local-policy interaction follows in later stages.
 
-Current step: UAT of the local and [container example](../examples/container/README.md), then detailed e02 registry/release work.
+Current step: user UAT of the [local](../examples/local/app.ts), [container](../examples/container/README.md), [release](../examples/releases/README.md) and [cluster](../examples/cluster/README.md) examples. Release decisions: [ADR 0002](adr/0002-release-format.md), [ADR 0003](adr/0003-cluster-trust.md).
 Container control uses authenticated engine exec per [ADR 0001](adr/0001-container-exec-control.md), not remote TLS/RBAC.
 The full external backend `src/app.ts` and a separate tags context passed real migrations/CRUD on embedded PostgreSQL 18.
 No publication or registry deployment occurred. OAuth and other domain flows are not verified.

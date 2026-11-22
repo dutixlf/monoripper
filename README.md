@@ -2,10 +2,11 @@
 
 Run selected Elysia contexts in separate Bun processes through one HTTP gateway.
 
-**Status: initial local prototype, not production-ready. The package is unpublished.**
+**Status: prototype `0.1.0-prototype`, not production-ready. The package is unpublished.**
 Selected contexts, background contexts, replicas, resource lifecycles, linting, local config, gRPC scale/status, worker recovery,
-persistent desired state, health/readiness, Prometheus metrics, trusted-proxy client addresses, JSON logs, and relayed WebSockets are implemented.
-Registry, release updates, autoscaling, and multiple nodes are not implemented yet.
+persistent desired state, health/readiness, Prometheus metrics, trusted-proxy client addresses, JSON logs, and relayed WebSockets are implemented,
+as are immutable releases with a private registry, deploy/rollback of selected contexts, node agents on other machines,
+request context with explicit cross-context calls, and bounded autoscaling. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Requirements
 
@@ -90,7 +91,9 @@ export default defineConfig({
 - Config is trusted executable TypeScript/JavaScript, not a sandbox. Configuration discovery and hot reload are not supported.
 - `admin`, `logging`, and `http.trustedProxies` are described under [Health, metrics, client address, and logs](#health-metrics-client-address-and-logs).
 - `http.websocket` is described under [WebSocket and streaming](#websocket-and-streaming).
-- Unknown options are rejected. `registry` and deploy options are not supported yet, rather than silently ignored.
+- Unknown options are rejected rather than silently ignored.
+- Release mode replaces `app` with `release`; see [Releases and deployment](#releases-and-deployment).
+  `loadConfig` loads source-mode configs; `loadRuntimeConfig` loads either kind.
 
 ## gRPC and persistent state
 
@@ -117,7 +120,8 @@ Failed operations produce a nonzero CLI exit. GetStatus/GetOperation and SetCont
 
 SDK: `await connectControl({address, token, project, environment})`, then getStatus/setContext/getOperation/waitOperation, and always close.
 Programmatic Runtime exposes the same methods without network transport. `status()` still returns workers.
-The control API currently permits loopback only (127.0.0.1 or ::1). Remote plaintext bind is prohibited. TLS/multinode are not implemented yet.
+Without `control.tls` the control API permits loopback only (127.0.0.1 or ::1); remote plaintext bind is prohibited.
+With `control: { host, port, tokenEnv, tls: { certFile, keyFile } }` it binds any host, and clients pass `--ca-file <pem>` (SDK: `tls: { ca }`).
 One credential provides administrative access to one configured project/environment. Separate roles are not implemented yet.
 The admin credential is not persisted in state. Workers receive an empty value, not the secret.
 
@@ -229,14 +233,17 @@ bun dist/cli.js --help
 bun run test:package
 bun run test:landing
 python3 scripts/check-specs.py
+nix shell nixpkgs#podman -c bun run test:container   # opt-in, rootless Podman
 ```
+
+Release, registry, deploy, multi-node and autoscaling suites are part of `bun test tests`. The registry full-disk test needs `bash`.
 
 Tests run real processes, protobuf gRPC, SIGKILL/replay, HTTP body drain, and temporary PostgreSQL 18.
 The PostgreSQL compatibility test requires a non-root user. The native postinstall for `@embedded-postgres/linux-x64` is explicitly allowed in package.json.
 Other platforms are unverified. They can require permission for the corresponding native package.
-Control tests exercise real SetContext/GetStatus/GetOperation. Autoscale explicitly returns UNIMPLEMENTED.
+Control tests exercise real SetContext/GetStatus/GetOperation/SetAutoscale.
 After build, create a local npm archive with `bun pm pack --ignore-scripts --destination /tmp/monoripper-package`.
-This command publishes nothing. The product license is undecided. `UNLICENSED` is intentional.
+This command publishes nothing. The product license is undecided. `UNLICENSED` is intentional until the owner chooses one.
 
 ### Nix
 
@@ -264,6 +271,86 @@ No force push, reset, or Git-guard disablement is used. Origin fetch/push URLs m
 If push fails, the workflow does not roll back history. Resolve the cause, return to the feature branch, and retry.
 This transfers source, not npm publication or application deployment. The workflow does not configure CI.
 
+## Releases and deployment
+
+A release is one immutable archive of the whole app, addressed by the `sha256` of its bytes. Contexts update independently.
+
+```sh
+monoripper pack --app ./monoripper.app.ts --out release.tar.gz --label 1.4.0      # runs check first
+monoripper publish release.tar.gz --registry https://registry.internal/ --output release.json   # MONORIPPER_REGISTRY_TOKEN
+monoripper deploy --controller controller.internal:50051 --ca-file ca.pem --project shop --environment staging \
+  --release release.json --contexts user,billing --request-id "$CI_RUN" --wait
+monoripper operation --controller ... --project shop --id <operationId> --wait   # resume after a lost connection
+```
+
+- **pack** bundles every context and resource entry with shared chunks and npm dependencies into a deterministic ustar+gzip archive:
+  `manifest.json`, `entries/`, `chunks/`, `assets/` (files imported with `with { type: 'file' }`). `elysia` and `monoripper` stay external
+  and resolve to the runtime's copies. Other unresolved imports and native addons are rejected. `.env` files and environment values are never inlined.
+  The digest does not depend on where the checkout lives. The manifest pins Bun, Elysia, the release ABI, platform and architecture; runtimes refuse mismatches.
+- **registry** (`monoripper registry --config`, [example](examples/releases/registry.config.ts)) stores releases per project with separate
+  read (runtime) and write (CI) credentials. Uploads must match their digest and be a valid release of that project; repeats are safe;
+  a full disk returns 507. Without `http.tls` it binds loopback only.
+- **Release mode**: `defineConfig({ release, registry, initial, ... })` instead of `app`. `release` is an archive, a `release.json`, or `<project>@sha256:<hex>`,
+  and applies to new state only. Releases are verified, extracted read-only under `<dataDir>/releases`, and start offline once cached.
+  Each context runs in `<dataDir>/work/<context>`. Release mode always persists state (default `.monoripper/<project>/<environment>`).
+- **deploy** sends `SetContext` with a digest (and optional `replicas`, default: unchanged). The runtime fetches it from its configured registry,
+  checks ownership against every other serving context, starts the new replicas, then switches routing and replicas at once.
+  Old replicas drain: running requests finish on the old release. Failures before the switch keep the old release; after a crash the durable
+  operation replays. Old and new replicas must fit `capacity.maxReplicas` together, otherwise `CAPACITY_EXCEEDED`.
+  Status shows `release`, `servingRelease` and `lastGoodRelease` per context; operations show `step` (`preparing`, `starting`, `switching`, `draining`).
+- **Rollback** is a deploy of a retained digest. A release may add a context; deleting contexts is not supported.
+- One operation per context; partial success exits nonzero. Reusing `--request-id` returns the original operations.
+
+Walkthrough: [examples/releases](examples/releases/README.md). CI example: [examples/releases/ci.yml](examples/releases/ci.yml).
+
+## Multiple nodes
+
+`monoripper node --config` ([example](examples/cluster/node.config.ts)) runs an agent on another machine. The release-mode runtime opens
+`cluster: { host, port, tls, caFile, tokenEnv, heartbeatTimeoutMs }` for agents; both sides verify each other's certificate against the private CA
+and present the shared cluster credential. Agents report capacity and compatibility in heartbeats, download assigned digests from their registry,
+and proxy authenticated gateway traffic (HTTP and WebSockets) to their loopback workers.
+
+- Placement picks the node with the fewest replicas among this process (`capacity.maxReplicas`, 0 for gateway-only) and healthy, compatible agents with a free slot.
+  Unreachable or untrusted agents are skipped. No suitable node: `CAPACITY_EXCEEDED`.
+- Missing heartbeats withdraw a node's replicas and recovery places replacements. A reconnecting agent stops replicas the controller replaced,
+  and a restarted controller stops every replica it did not assign. Withdrawal does not prove a process stopped, so during partitions a context can
+  briefly run more processes than desired.
+- `status` lists `nodes`, and workers carry `node`. There is still one controller and one ingress.
+
+Walkthrough: [examples/cluster](examples/cluster/README.md).
+
+## Request context and cross-context calls
+
+The gateway adds an envelope to every request: a trace id (from a valid W3C `traceparent`, otherwise new), a request id and the remaining deadline.
+Clients cannot supply any `x-monoripper-*` header. A context reads it with `requestContext(request)` → `{ traceId, requestId, deadline, caller?, claims }`.
+
+```ts
+export default defineContext({
+  create: ({ app, services }) => app.get('/api/orders/:id', async ({ request, params }) => {
+    const user = await authenticate(request) // business auth stays in the context
+    const invoice = await services.fetch(`/api/billing/invoices/${params.id}`, { request, claims: { sub: user.id } })
+    return { order: params.id, invoice: await invoice.json() }
+  }),
+})
+```
+
+`services.fetch` goes through the gateway with the caller's trace and remaining deadline, routes by ownership (unknown paths 404),
+sets `caller` to the calling context, and passes only claim names listed in `services: { claims: ['sub', 'tenant'] }`. It works across nodes.
+Claims are only as trustworthy as the calling context's authentication.
+
+## Autoscaling
+
+```sh
+monoripper autoscale --controller ... --project shop --context user --min 1 --max 6 --target-in-flight 8
+monoripper autoscale --controller ... --project shop --context user --disable
+```
+
+The autoscaler samples the gateway's in-flight requests per context every `autoscale.intervalMs`. It scales up to
+`ceil(average / targetInFlight)` over `upWindowMs`, and down only when the peak over the longer `downWindowMs` fits fewer replicas.
+Changes wait for `cooldownMs`, move at most `maxStep`, stay within min/max and the capacity of connected nodes, and hold on stale data or active operations.
+Defaults: `{ intervalMs: 1000, upWindowMs: 10000, downWindowMs: 60000, cooldownMs: 30000, maxStep: 2 }`.
+While a policy exists, manual scaling returns `AUTOSCALE_ACTIVE`; deployments keep the count. Policies persist; `min` is at least 1.
+
 ## Container example
 
 See [examples/container/README.md](examples/container/README.md) for the pinned non-root Debian/glibc image and rootless Podman commands.
@@ -275,7 +362,7 @@ bun run test:container
 ```
 
 This opt-in suite requires real rootless Podman. It checks boundaries, scale/recovery, recreation, hard kill and response drain.
-It does not silently skip when the engine is unavailable. Remote TLS control and registry bootstrap remain future work.
+It does not silently skip when the engine is unavailable. The example image runs a source app; a release-mode container takes `release` plus a mounted registry credential instead.
 
 ## Elysia examples and embedded PostgreSQL
 
@@ -338,11 +425,12 @@ Contexts read the result with `requestClientAddress(request)`. Clients cannot su
 Lines are bounded to 16 KiB. Runtime events (`worker_ready`, `worker_exited`, `diagnostic` codes) are JSON with `component: "monoripper"`.
 Monoripper never writes access logs or diagnostic messages to the log stream. The default `text` format inherits worker output unchanged.
 
-## Limitations and next step
+## Limitations
 
-Registry/deploy, autoscaling, cross-node calls, cross-replica WebSocket fan-out, and controller HA are absent. HTTP streams stay bounded by the request timeout. Persistence saves desired state, not JS heaps or active requests.
+Controller and ingress HA, cross-replica WebSocket fan-out, incremental surge rollouts, automatic rollback on error rates and release garbage collection are absent.
+HTTP streams stay bounded by the request timeout. Persistence saves desired state, not JS heaps or active requests.
 The HTTP port does not provide authentication. Elysia contexts must implement business auth. Public services also need a standard TLS ingress.
-Replicas share container limits. Exactly-once guarantees and isolation of untrusted code are not provided.
-Local e01s01/e01s02 control, e01s03 container and e01s04 WebSocket checks are implemented. User UAT is still required before closing e01.
-Next product stage: e02 registry/releases. The current image embeds an example, not the future release delivery mechanism.
+Replicas share container or node limits. Exactly-once guarantees, strict singletons during partitions and isolation of untrusted code are not provided.
+One cluster credential is shared by the controller and all agents ([ADR 0003](specs/adr/0003-cluster-trust.md)).
+All e01–e03 automated checks pass. User UAT is still required. The container image embeds an example app; release-mode images take a bootstrap release instead.
 Design and roadmap: [specs/README.md](specs/README.md).

@@ -1,6 +1,6 @@
 {
   "name": "monoripper",
-  "version": "0.1.0-dev.0",
+  "version": "0.1.0-prototype",
   "description": "Run selected Elysia application contexts in isolated Bun processes.",
   "type": "module",
   "license": "UNLICENSED",
@@ -19,7 +19,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "test": "bun test tests",

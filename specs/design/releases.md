@@ -1,6 +1,6 @@
 # Releases, registry, updates, and CI/CD
 
-Status: pseudocode and planned CLI. Purpose: define code delivery without Git in the runtime or production builds.
+Status: implemented as specified in e02 (see [README](../../README.md#releases-and-deployment)); pseudocode kept as design rationale. Purpose: define code delivery without Git in the runtime or production builds.
 Basis: [architecture](../tech-architecture/tech-stack.md), [control](runtime.md).
 
 ## 1. Release format
@@ -179,7 +179,7 @@ Readiness can miss business defects. Ready does not mean the new version is sema
 ## 6. CI/CD
 
 ```sh
-# PLANNED commands, not implemented yet.
+# Implemented commands; see examples/releases/ci.yml for a complete pipeline.
 # CI uses a fixed Bun toolchain and the application lockfile.
 bun install --frozen-lockfile
 bun run test
@@ -222,4 +222,4 @@ Updating Bun or monoripper itself requires image replacement, not a context depl
 Without a second ingress instance, container replacement has no zero-downtime guarantee.
 
 Document check: `python3 scripts/check-specs.py`.
-Next step: e02 after the local lifecycle. See the [roadmap](../ROADMAP.md).
+Implementation: [e02 stories](../epics/e02-releases/epic.yaml). See the [roadmap](../ROADMAP.md).

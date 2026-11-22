@@ -2,7 +2,7 @@ schema_version: 1
 status: in_progress
 release:
   version: 0.1.0-prototype
-  version_status: proposed_not_published
+  version_status: set_in_package_json_not_published
   goal: Managed Elysia contexts, immutable releases, and later expansion to multiple nodes.
 ordering: Dependency-first. Among available steps, prioritize value per unit of complexity without invented WSJF numbers.
 epics:
@@ -16,14 +16,14 @@ epics:
   - id: e02
     title: Registry and version updates
     file: epics/e02-releases/epic.yaml
-    status: planned
+    status: in_progress
     depends_on: [e01]
-    planning_depth: roadmap_only
+    planning_depth: detailed
     stories: [e02s01, e02s02, e02s03]
   - id: e03
     title: Multiple nodes and autoscaling
     file: epics/e03-cluster/epic.yaml
-    status: planned
+    status: in_progress
     depends_on: [e02]
-    planning_depth: roadmap_only
+    planning_depth: detailed
     stories: [e03s01, e03s02, e03s03]

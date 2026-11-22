@@ -1,0 +1,37 @@
+type: verification
+context: e02 releases, private registry, deploy and rollback
+stories: [e02s01, e02s02, e02s03]
+status: automated_passed_awaiting_user_uat
+session_date: '2026-11-23'
+branch: feat/release-readiness
+baseline: 146b9f1
+environment: { host: NixOS Linux amd64, bun: 1.3.13, elysia: 1.4.30, engine: rootless Podman (nix shell nixpkgs#podman) }
+checks:
+  typecheck: passed
+  runtime: { command: bun test tests, result: passed, tests: 156 }
+  archive: { command: bun test tests/unit/archive.test.ts, result: passed }
+  pack_and_release_mode: { command: bun test tests/e2e/release-pack.test.ts, result: passed }
+  registry: { command: bun test tests/e2e/registry.test.ts, result: passed, note: full disk simulated with RLIMIT_FSIZE and SIGXFSZ ignored }
+  deploy: { command: bun test tests/e2e/deploy.test.ts, result: passed, note: includes SIGKILL after the switch via MONORIPPER_FAILPOINT }
+  package: { command: bun run test:package, result: passed, note: installed package packs and serves a release }
+  elysia: passed
+  elysia_postgres: passed
+  landing: passed
+  container: passed
+  autobahn: { result: passed, cases: 301, note: rerun after the TLS-capable handshake change }
+  plan_consistency: { command: bigpowers plan-consistency-check.sh with Nix python3+pyyaml, result: passed_all_capsules }
+  specs: passed
+manual_walkthrough:
+  by: agent, not the user
+  steps: examples/releases/README.md registry, pack v1/v2, publish, release-mode serve, deploy v2, rollback v1, status
+  result: passed
+findings_fixed_during_work:
+  - Registry ignored short writes, so a file size limit produced a truncated archive (422) instead of 507; writes now loop.
+  - Bun source comments made digests depend on the checkout path; bundling now runs with the app root as cwd.
+  - Registry cleanup of <dataDir>/tmp could hit a shared /tmp if misconfigured; it uses .monoripper-uploads.
+  - Deploy retries with a fresh revision were rejected; the deployment idempotency key is now the intent.
+residual_risks:
+  - Reproducible builds across different toolchains are not promised; the manifest pins the runtime instead.
+  - No release garbage collection, incremental surge or automatic error-rate rollback.
+  - Two unexplained ECONNRESET/connection-refused publishes in deploy.test beforeAll during development; not reproduced in more than 20 later runs.
+manual_uat: pending

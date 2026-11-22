@@ -85,6 +85,6 @@ DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus" \
   nix shell nixpkgs#podman --command bun run test:container
 ```
 
-Remote TLS control, image updates without interruption, production registry bootstrap and other
-platforms are not part of this example. Arbitrary blocking config code and stalled kernel I/O
+This example runs a source app with loopback control. Remote TLS control (`control.tls`), release-mode bootstrap
+(`release` + `registry`) and image updates without interruption are not exercised here, nor are other platforms. Arbitrary blocking config code and stalled kernel I/O
 cannot be cancelled safely. The container engine remains the final bounded shutdown mechanism.

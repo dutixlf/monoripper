@@ -1,6 +1,6 @@
 # Application API: Elysia, contexts, and shared modules
 
-Status: target API and pseudocode. Purpose: show changes in the user application.
+Status: target API and pseudocode; `services.fetch` and `requestContext` are implemented (e03s01). Purpose: show changes in the user application.
 For the implemented subset, see the [project README](../../README.md). Local control and persisted desired state exist. `services.fetch` is still absent.
 Related documents: [architecture](../tech-architecture/tech-stack.md), [runtime](runtime.md).
 

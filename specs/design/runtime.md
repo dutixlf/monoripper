@@ -1,7 +1,7 @@
 # Execution, gRPC, and clustering
 
-Status: target design and pseudocode. Purpose: define explicit lifecycle and control behavior.
-Local workers/gateway, protobuf gRPC, and desired-state recovery are implemented. Clustering and autoscaling are not. See the [actual API](../../README.md).
+Status: implemented through e03 (node agents, placement, autoscaling); pseudocode kept as design rationale. Purpose: define explicit lifecycle and control behavior.
+Local workers/gateway, protobuf gRPC, desired-state recovery, node agents and autoscaling are implemented. See the [actual API](../../README.md).
 Basis: [architecture](../tech-architecture/tech-stack.md), [application API](application-api.md).
 
 ## 1. Lifecycle worker

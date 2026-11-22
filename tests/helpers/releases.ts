@@ -65,7 +65,8 @@ export default defineContext({ create: ({ app, services }) => app
     return { pid: process.pid, ppid: process.ppid, front: requestContext(request), back: await response.json(), status: response.status }
   })
   .get('/api/slow', async () => { await Bun.sleep(Number(process.env.SLOW_MS ?? 300)); return 'slow' })
-  .ws('/api/live', { message(ws, message) { ws.send('echo:' + message) } }) })
+  .ws('/api/live', { message(ws, message) { ws.send('echo:' + message) } }),
+  metrics: () => '# TYPE app_up gauge\\napp_up 1\\n' })
 `,
     'billing.ts': `import { defineContext, requestContext } from '{{sdk}}'
 export default defineContext({ create: ({ app }) => app

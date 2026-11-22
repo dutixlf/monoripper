@@ -36,7 +36,7 @@ async function agent(id: string, clusterUrl: string, options: { cert?: 'server' 
 test('e03s01: a node agent serves replicas behind the one gateway with request context, TLS and credentials', async () => {
   const runtime = await monoripper.serve({ release: `shop@${digest}`, registry: { url: registry.url.href, tokenEnv: names.read }, root: directory,
     dataDir: join(directory, 'controller'), initial: { api: { replicas: 1 }, billing: { replicas: 1 } }, http: { port: 0 },
-    capacity: { maxReplicas: 2 }, control: { port: 0, tokenEnv: names.control }, services: { claims: ['sub'] },
+    capacity: { maxReplicas: 2 }, control: { port: 0, tokenEnv: names.control }, services: { claims: ['sub'] }, admin: { port: 0 },
     cluster: { tls: tls('server'), caFile, tokenEnv: names.cluster, heartbeatTimeoutMs: 2000 } })
   const client = await connectControl({ address: runtime.controlAddress!, token: secrets.control, project: 'shop' })
   const b = await agent('node-b', runtime.clusterUrl!.href)
@@ -67,6 +67,11 @@ test('e03s01: a node agent serves replicas behind the one gateway with request c
     expect(remote.front.caller).toBeUndefined()
     expect(remote.back).toMatchObject({ traceId: trace, caller: 'api', claims: { sub: 'user-7' }, version: 'v1' })
     expect(Number(remote.back.deadline)).toBeLessThanOrEqual(Number(remote.front.deadline) + 50)
+
+    // The admin endpoint scrapes the remote replica through its agent.
+    const metrics = await fetch(new URL('/-/metrics', runtime.adminUrl!)).then(r => r.text())
+    expect(metrics).toContain(`app_up{context="api",worker="${remotePid}"} 1`)
+    expect(metrics).not.toContain('monoripper_worker_scrape_errors_total{context="api"}')
 
     // WebSockets relay through both hops.
     const sockets = await Promise.all([0, 1].map(() => new Promise<string>((resolve, reject) => {

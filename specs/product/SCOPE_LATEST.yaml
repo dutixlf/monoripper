@@ -77,7 +77,7 @@ constraints:
   deployment: Linux and containers. Other operating systems are outside the first verified matrix.
   architecture_policy: Import linting and explicit errors are sufficient for the prototype.
   secrets: Exclude from source, releases, manifests, and logs.
-  planning: All new documented APIs are provisional. Implementation does not exist yet.
+  planning: All documented APIs are provisional until the first published release. A prototype implements every in-scope item.
   budget: Not specified. Do not promise timelines or performance without measurements.
 success_criteria:
   - Starting user does not execute billing or its resources.

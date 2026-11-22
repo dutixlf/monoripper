@@ -6,12 +6,12 @@ development_status:
   e01s02: awaiting_uat
   e01s03: awaiting_uat
   e01s04: awaiting_uat
-  e02: planned
-  e02s01: planned
-  e02s02: planned
-  e02s03: planned
-  e03: planned
-  e03s01: planned
-  e03s02: planned
-  e03s03: planned
-note: e01s01/e01s02/e01s03/e01s04 automated checks pass. User UAT remains pending. e02/e03 are not implemented yet.
+  e02: in_progress
+  e02s01: awaiting_uat
+  e02s02: awaiting_uat
+  e02s03: awaiting_uat
+  e03: in_progress
+  e03s01: awaiting_uat
+  e03s02: awaiting_uat
+  e03s03: awaiting_uat
+note: All e01-e03 automated checks pass. User UAT remains pending for every story.

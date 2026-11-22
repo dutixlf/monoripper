@@ -1,6 +1,6 @@
 # Implementation roadmap
 
-Status: e01s01/e01s02/e01s03/e01s04 automated checks passed, awaiting UAT. e02/e03 are not implemented yet.
+Status: e01–e03 implemented and automated checks passed ([e02](verifications/e02-verify.yaml), [e03](verifications/e03-verify.yaml)); awaiting user UAT.
 Purpose: deliver verifiable value through vertical slices.
 The full product includes e01–e03. Exclusion from e01 does not cancel a requirement.
 
@@ -52,7 +52,7 @@ User-approved scope: [ADR 0001](adr/0001-container-exec-control.md). Remote netw
 
 Verify: `test -f tests/container/lifecycle.sh && bash tests/container/lifecycle.sh`.
 
-e01 gate: all three stories pass, typecheck/tests pass, and errors remain visible. Detail e02 only after this gate.
+e01 gate: all four stories pass, typecheck/tests pass, and errors remain visible. On 2026-11-22 the user authorized e02/e03 before e01 UAT.
 
 ## e02. Registry and implementation changes without ingress interruption
 
@@ -107,10 +107,10 @@ e03 gate: fake-clock tests are deterministic. Real load measurements cannot be r
 - Automatic server procurement/provisioning.
 - Database migration rollback, heap snapshots, and exactly-once jobs.
 - Arbitrary dynamic imports/native addons without release format verification.
-- WebSocket/SSE before a separate connection specification.
+- Cross-replica WebSocket fan-out and HTTP streams beyond the request timeout (WebSocket relay is e01s04).
 
 ## Plan verification
 
 `python3 scripts/check-specs.py` checks document structure and local links, not future runtime behavior.
 A real parser checks YAML separately. Protocols and the bundler require future executable tests.
-Next action: UAT of e01, including the container example, then detailed e02 registry/release work. Control remains local-only, not remote TLS/HA.
+Next action: user UAT of e01–e03 examples. Control supports TLS; there is still one controller and no HA.

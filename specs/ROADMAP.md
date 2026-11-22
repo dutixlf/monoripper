@@ -9,9 +9,8 @@ The full product includes e01–e03. Exclusion from e01 does not cancel a requir
 - Base architecture agreed. The user authorized implementation.
 - Bun 1.3.13 is available through Nix. package.json, source, and e01s01 tests already exist.
 - e01s01 commands passed. See [initial verification](verifications/e01s01-verify.yaml) and [PostgreSQL follow-up](verifications/embedded-postgres-verify.yaml).
-- Other verify commands are future checks, not completed tests.
 - Test commands use `test -f ... && bun test ...`. Missing files cannot produce a false PASS.
-- e01 has detailed story specs and all task checks pass. User UAT remains pending. e02/e03 remain a roadmap.
+- e01–e03 have detailed story specs and automated verification. User UAT remains pending.
 - Create files/packages only as needed. Do not build speculative layers without an end-to-end scenario.
 - Pin libraries and versions after verification. Do not publish npm packages or deploy without a separate request.
 
@@ -109,8 +108,12 @@ e03 gate: fake-clock tests are deterministic. Real load measurements cannot be r
 - Arbitrary dynamic imports/native addons without release format verification.
 - Cross-replica WebSocket fan-out and HTTP streams beyond the request timeout (WebSocket relay is e01s04).
 
+## After the prototype
+
+Consider a later `v1.1.0` for additive capabilities after the stable `v1.0.0` baseline. Keep the existing SDK, config, CLI and wire contracts working with the new options disabled. Verify that contract with a consumer test suite before calling the release backward-compatible. Breaking contract changes are not part of `v1.1.0`.
+
 ## Plan verification
 
 `python3 scripts/check-specs.py` checks document structure and local links, not future runtime behavior.
-A real parser checks YAML separately. Protocols and the bundler require future executable tests.
+A real parser checks YAML separately. Executable tests cover the protocols and bundler.
 Next action: user UAT of e01–e03 examples. Control supports TLS; there is still one controller and no HA.

@@ -93,3 +93,14 @@ This is not security certification or a claim of production readiness.
 Evidence: [verify record](../verifications/e01s02-verify.yaml).
 Current checks: `bun run typecheck`, `bun test tests`, `bun run test:package`, `bun run test:elysia`, `bun run test:elysia:postgres`.
 The external integration results above are historical, not evidence for the replacement Elysia examples.
+
+## 0.1.0-prototype pre-tag review
+
+Scope: release and cluster boundaries added since `146b9f1`, with the final SDK fix in `8bc0c0f`.
+
+- Registry operations check project credentials and digest format before opening storage. Uploads are bounded and staged, and the cache checks the downloaded digest and archive paths before extraction. The cache directory and authorized release publishers are trusted, not a sandbox.
+- Cluster and remote control require TLS. The shared cluster credential grants broad trust by design; isolate its holders and use a private CA. Heartbeat loss is not fencing (see [ADR 0003](../adr/0003-cluster-trust.md)).
+- `services.fetch` now checks the parsed destination against the runtime listener before setting its credential. Redirect following remains disabled. The tests check same-listener requests, credential replacement and manual redirects.
+- No runtime dependencies added. The only tracked private keys in the release diff are the explicitly public TLS test fixtures, not included in the package.
+
+No unresolved high-severity issue found in the reviewed flows. This is a self-review, not a production security audit.

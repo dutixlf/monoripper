@@ -1,7 +1,9 @@
-import { resolve } from 'node:path'
-import { MonoripperError, type AppDefinition, type ServeOptions } from './definitions'
+import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
+import { MonoripperError, type AppDefinition, type ReleaseServeOptions, type RuntimeOptions, type ServeOptions } from './definitions'
 import { forwardingHeaders, leasedBody, publicError } from './http'
-import { owns, validPath, validateApp } from './ownership'
+import { validPath, validateApp } from './ownership'
 import { assertKeys, trustedProxyList, validateRuntimeConfig } from './config'
 import { clientAddress, isTrustedPeer, stripForwarding } from './client-ip'
 import { GatewayMetrics } from './metrics'
@@ -9,7 +11,11 @@ import { WorkerPool } from './worker-pool'
 import { websocketLimits } from './process-worker'
 import { connectWebSocket, type WebSocketRelay } from './websocket'
 import { StateStore } from './state-store'
-import { Controller } from './controller'
+import { Controller, type ControllerSource } from './controller'
+import { ReleaseCache } from './release-cache'
+import { inspectRelease } from './release'
+import { validDigest } from './archive'
+import { registryBase, validToken, type RegistryEndpoint } from './registry-client'
 import type { ControlStatus, Operation, SetContextRequest, WorkerStatus } from './control-types'
 
 export interface Runtime {
@@ -32,35 +38,82 @@ function resolveApp(app: AppDefinition, root: string): AppDefinition {
     tsconfig: app.tsconfig ? resolve(root, app.tsconfig) : undefined,
   }
 }
-export async function serve(options: ServeOptions): Promise<Runtime> {
-  assertKeys(options, ['app', 'root', 'initial', 'http', 'lifecycle', 'env', 'onDiagnostic', 'control', 'dataDir', 'environment', 'recovery', 'startupSignal', 'admin', 'logging'], 'serve')
+type Bootstrap = { project: string; digest: string; archive?: Uint8Array }
+/** `<project>@sha256:<hex>`, a `release.json` written by publish, or a release archive. */
+async function bootstrapRelease(reference: string, root: string): Promise<Bootstrap> {
+  const pinned = reference.match(/^([a-zA-Z0-9][a-zA-Z0-9_-]{0,63})@(sha256:[a-f0-9]{64})$/)
+  if (pinned) return { project: pinned[1]!, digest: pinned[2]! }
+  const path = resolve(root, reference)
+  if (path.endsWith('.json')) {
+    const record = JSON.parse(await readFile(path, 'utf8')) as { project?: unknown; digest?: unknown }
+    if (typeof record.project !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(record.project) || !validDigest(record.digest)) {
+      throw new MonoripperError('INVALID_CONFIG', 'release.json needs project and digest')
+    }
+    return { project: record.project, digest: record.digest }
+  }
+  const archive = new Uint8Array(await readFile(path))
+  const { manifest, digest } = inspectRelease(archive)
+  return { project: manifest.project, digest, archive }
+}
+
+export async function serve(input: ServeOptions | ReleaseServeOptions): Promise<Runtime> {
+  let options = input as RuntimeOptions
+  assertKeys(options, ['app', 'root', 'release', 'registry', 'capacity', 'initial', 'http', 'lifecycle', 'env', 'onDiagnostic', 'control', 'dataDir', 'environment', 'recovery', 'startupSignal', 'admin', 'logging'], 'serve')
   validateRuntimeConfig(options)
-  validateApp(options.app)
+  if ((options.app === undefined) === (options.release === undefined)) throw new MonoripperError('INVALID_CONFIG', 'Set exactly one of app (source mode) and release (release mode)')
+  if (options.app !== undefined) validateApp(options.app)
   if (options.startupSignal !== undefined && !(options.startupSignal instanceof AbortSignal)) throw new MonoripperError('INVALID_CONFIG', 'startupSignal must be an AbortSignal')
   const assertStarting = () => { if (options.startupSignal?.aborted) throw new MonoripperError('SHUTTING_DOWN', 'Runtime startup cancelled') }
   assertStarting()
   if (options.root !== undefined && typeof options.root !== 'string') throw new MonoripperError('INVALID_CONFIG', 'root must be a path')
   if (options.onDiagnostic !== undefined && typeof options.onDiagnostic !== 'function') throw new MonoripperError('INVALID_CONFIG', 'onDiagnostic must be a function')
-  options = { ...options, app: structuredClone(options.app), initial: structuredClone(options.initial),
+  options = { ...options, ...(options.app ? { app: structuredClone(options.app) } : {}), initial: structuredClone(options.initial),
+    ...(options.registry ? { registry: { ...options.registry } } : {}), ...(options.capacity ? { capacity: { ...options.capacity } } : {}),
     http: { ...options.http, ...(options.http?.trustedProxies ? { trustedProxies: [...options.http.trustedProxies] } : {}),
       ...(options.http?.websocket ? { websocket: { ...options.http.websocket } } : {}) },
     lifecycle: { ...options.lifecycle }, recovery: { ...options.recovery },
-    ...(options.control ? { control: { ...options.control } } : {}), env: { ...options.env },
+    ...(options.control ? { control: { ...options.control, ...(options.control.tls ? { tls: { ...options.control.tls } } : {}) } } : {}), env: { ...options.env },
     ...(options.admin ? { admin: { ...options.admin } } : {}), ...(options.logging ? { logging: { ...options.logging } } : {}) }
   const trusted = options.http?.trustedProxies ? trustedProxyList(options.http.trustedProxies) : undefined
   const root = resolve(options.root ?? process.cwd())
   options.root = root
-  const app = resolveApp(options.app, root)
-  for (const name of Object.keys(options.initial)) if (!Object.hasOwn(app.contexts, name)) throw new MonoripperError('INVALID_CONFIG', `Unknown initial context: ${name}`)
   const environment = options.environment ?? 'development'
   const token = options.control ? process.env[options.control.tokenEnv] : undefined
   if (options.control && (!token || !/^[\x21-\x7e]{32,512}$/.test(token))) throw new MonoripperError('INVALID_CONFIG', 'Control requires a 32–512 byte printable ASCII credential without whitespace in its configured environment variable')
-  const dataDir = options.dataDir ?? (options.control ? `.monoripper/${app.project}/${environment}` : undefined)
-  const store = await StateStore.open({ project: app.project, environment, directory: dataDir ? resolve(root, dataDir) : undefined,
-    contexts: Object.keys(app.contexts), initial: Object.fromEntries(Object.entries(options.initial).map(([name, value]) => [name, value.replicas])) })
+  const initial = Object.fromEntries(Object.entries(options.initial).map(([name, value]) => [name, value.replicas]))
+  let source: ControllerSource
+  let store: StateStore
+  if (options.app) {
+    const app = resolveApp(options.app, root)
+    for (const name of Object.keys(options.initial)) if (!Object.hasOwn(app.contexts, name)) throw new MonoripperError('INVALID_CONFIG', `Unknown initial context: ${name}`)
+    const dataDir = options.dataDir ?? (options.control ? `.monoripper/${app.project}/${environment}` : undefined)
+    source = { kind: 'source', app, root }
+    store = await StateStore.open({ project: app.project, environment, directory: dataDir ? resolve(root, dataDir) : undefined, contexts: Object.keys(app.contexts), initial })
+  } else {
+    let registry: RegistryEndpoint | undefined
+    if (options.registry) {
+      registryBase(options.registry.url)
+      const credential = process.env[options.registry.tokenEnv]
+      if (!validToken(credential)) throw new MonoripperError('INVALID_CONFIG', 'Registry read credential must be 32–512 printable ASCII characters in its configured environment variable')
+      registry = { url: options.registry.url, token: credential, ...(options.registry.caFile ? { ca: await readFile(resolve(root, options.registry.caFile), 'utf8') } : {}) }
+    }
+    const bootstrap = await bootstrapRelease(options.release!, root)
+    // Release mode always persists: the cache and deployed digests must survive restarts.
+    const directory = resolve(root, options.dataDir ?? `.monoripper/${bootstrap.project}/${environment}`)
+    const cache = await ReleaseCache.open(join(directory, 'releases'), registry)
+    const fresh = !existsSync(join(directory, 'state.json'))
+    let initialReleases: Record<string, string> = {}
+    if (fresh) {
+      const loaded = bootstrap.archive ? await cache.importArchive(bootstrap.archive, bootstrap.project) : await cache.ensure(bootstrap.project, bootstrap.digest)
+      for (const name of Object.keys(options.initial)) if (!Object.hasOwn(loaded.manifest.contexts, name)) throw new MonoripperError('INVALID_CONFIG', `Unknown initial context: ${name}`)
+      initialReleases = Object.fromEntries(Object.keys(loaded.manifest.contexts).map(name => [name, loaded.digest]))
+    } else if (bootstrap.archive) await cache.importArchive(bootstrap.archive, bootstrap.project) // Keeps a bundled bootstrap usable offline.
+    source = { kind: 'release', cache, workRoot: join(directory, 'work') }
+    store = await StateStore.open({ project: bootstrap.project, environment, directory, initial, initialReleases })
+  }
   let controller: Controller
-  const pool = new WorkerPool(app, options, context => controller.unexpectedExit(context))
-  controller = new Controller(store, pool, options)
+  const pool = new WorkerPool(options, context => controller.unexpectedExit(context), options.capacity?.maxReplicas ?? 64)
+  controller = new Controller(store, pool, options, source)
   let server: Bun.Server<WebSocketRelay> | undefined
   let control: { address: string; close(): void } | undefined
   let admin: ReturnType<typeof Bun.serve> | undefined
@@ -106,7 +159,7 @@ export async function serve(options: ServeOptions): Promise<Runtime> {
         const url = new URL(request.url)
         if (!validPath(url.pathname)) return reject(400, 'INVALID_PATH')
         // ponytail: linear lookups for small apps; index immutable routing snapshots if profiling warrants it.
-        const owner = Object.entries(app.contexts).find(([, context]) => owns(context.owns, websocket ? 'GET' : request.method, url.pathname))?.[0]
+        const owner = controller.owner(websocket ? 'GET' : request.method, url.pathname)
         if (!owner) return reject(404, 'NOT_FOUND')
         context = owner
         if (websocket && (request.method !== 'GET' || request.headers.get('sec-websocket-version') !== '13' || !request.headers.get('sec-websocket-key'))) {

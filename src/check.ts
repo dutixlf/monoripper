@@ -71,12 +71,15 @@ export function checkApp(app: AppDefinition, settings: { root?: string } = {}): 
       }
       const specifier = expression.text
       if (isBuiltin(specifier) || specifier === 'bun' || specifier.startsWith('bun:')) return
-      const resolved = ts.resolveModuleName(specifier, file, options, ts.sys, resolver).resolvedModule
-      if (!resolved) {
+      const asset = /^\.{1,2}\//.test(specifier) ? resolve(dirname(file), specifier) : undefined
+      // Relative non-code files (assets imported with a file or text loader) are leaves, still subject to boundaries.
+      const resolvedFile = ts.resolveModuleName(specifier, file, options, ts.sys, resolver).resolvedModule?.resolvedFileName
+        ?? (asset && !['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '.mjs', '.cjs'].includes(extname(asset)) && ts.sys.fileExists(asset) ? asset : undefined)
+      if (!resolvedFile) {
         report(node, 'UNRESOLVED_IMPORT', `Cannot resolve ${specifier}`)
         return
       }
-      const target = canonical(resolved.resolvedFileName)
+      const target = canonical(resolvedFile)
       // External packages are libraries, not application context roots. SDK source
       // imports in development fixtures are equivalent to importing published monoripper.
       if (target.includes(sep + 'node_modules' + sep) || (within(target, sdkDirectory) && owner(target) === 'shared')) return

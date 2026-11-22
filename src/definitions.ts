@@ -27,9 +27,25 @@ export interface ResourceDefinition<T> {
   start(input: { env: NodeJS.ProcessEnv; context: string }): T | Promise<T>
   stop?(value: T): void | Promise<void>
 }
-export interface RuntimeConfig {
-  /** Manifest module path, resolved relative to the config file. */
+export interface RuntimeConfig extends RuntimeSettings {
+  /** Source mode: manifest module path, resolved relative to the config file. */
   app: string
+  release?: never
+}
+/** Release mode: the runtime serves extracted releases instead of a source checkout. */
+export interface ReleaseRuntimeConfig extends RuntimeSettings {
+  /**
+   * Bootstrap release for new state: a release archive or `release.json` path (relative to the config file),
+   * or `<project>@sha256:<hex>` fetched from `registry`. Existing state keeps its deployed releases.
+   */
+  release: string
+  app?: never
+  /** Release origin for deployments. Only digests are requested from it; deploy requests cannot name URLs. */
+  registry?: { url: string; tokenEnv: string; caFile?: string }
+}
+export interface RuntimeSettings {
+  /** Processes this node may run at once, including draining replicas and deployment candidates. Default and maximum 64. */
+  capacity?: { maxReplicas?: number }
   initial: Record<string, { replicas: number }>
   http?: {
     host?: string; port?: number; maxRequestBodyBytes?: number
@@ -49,11 +65,11 @@ export interface RuntimeConfig {
   recovery?: { maxRestarts?: number; backoffMs?: number }
   environment?: string
   dataDir?: string
-  control?: { host?: '127.0.0.1' | '::1'; port?: number; tokenEnv: string }
+  /** Without `tls`, control binds loopback only. With it, any host is allowed and clients must verify the certificate. */
+  control?: { host?: string; port?: number; tokenEnv: string; tls?: { certFile: string; keyFile: string } }
   env?: Record<string, string>
 }
-export interface ServeOptions extends Omit<RuntimeConfig, 'app'> {
-  app: AppDefinition
+interface ServeHooks {
   /** Entries and tsconfig resolve against this directory, not the process cwd. */
   root?: string
   /** Cancel startup only. After serve resolves, use Runtime.stop(). Not a config-file option. */
@@ -61,11 +77,23 @@ export interface ServeOptions extends Omit<RuntimeConfig, 'app'> {
   /** Operator-only diagnostic sink. Messages may contain sensitive application data; redact before logging. */
   onDiagnostic?: (event: { context: string; code: string; message: string }) => void
 }
+export interface ServeOptions extends RuntimeSettings, ServeHooks { app: AppDefinition; release?: never }
+export interface ReleaseServeOptions extends RuntimeSettings, ServeHooks {
+  /** See ReleaseRuntimeConfig.release; relative paths resolve against `root`. */
+  release: string
+  app?: never
+  registry?: ReleaseRuntimeConfig['registry']
+}
+
+/** Internal union shape after validation; public callers use ServeOptions or ReleaseServeOptions. */
+export type RuntimeOptions = RuntimeSettings & ServeHooks & { app?: AppDefinition; release?: string; registry?: ReleaseRuntimeConfig['registry'] }
 
 export const defineApp = (app: AppDefinition): AppDefinition => app
 export const defineContext = (context: ContextDefinition): ContextDefinition => context
 export const defineResource = <T>(resource: ResourceDefinition<T>): ResourceDefinition<T> => resource
-export const defineConfig = (config: RuntimeConfig): RuntimeConfig => config
+export function defineConfig(config: RuntimeConfig): RuntimeConfig
+export function defineConfig(config: ReleaseRuntimeConfig): ReleaseRuntimeConfig
+export function defineConfig(config: RuntimeConfig | ReleaseRuntimeConfig) { return config }
 
 export class MonoripperError extends Error {
   constructor(public readonly code: string, message: string, options?: ErrorOptions) {

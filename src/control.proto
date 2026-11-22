@@ -5,7 +5,7 @@ service Control {
   rpc SetContext(SetContextRequest) returns (Operation);
   rpc GetStatus(Scope) returns (Status);
   rpc GetOperation(OperationRequest) returns (Operation);
-  rpc SetAutoscale(Scope) returns (Operation);
+  rpc SetAutoscale(SetAutoscaleRequest) returns (AutoscaleResult);
 }
 message Scope { string project = 1; string environment = 2; }
 message SetContextRequest {
@@ -15,18 +15,25 @@ message SetContextRequest {
   optional uint32 expected_revision = 4;
   string context = 5;
   optional uint32 replicas = 6;
+  optional string release = 7;
 }
 message OperationRequest { string project = 1; string environment = 2; string id = 3; }
 message Failure { string code = 1; string message = 2; }
 message Operation {
   string id = 1; string request_id = 2; string context = 3; uint32 replicas = 4;
   uint32 revision = 5; string phase = 6; uint64 created_at = 7; uint64 updated_at = 8; Failure error = 9;
+  string release = 10; string step = 11; Failure warning = 12; string origin = 13;
 }
-message Worker { string context = 1; uint32 pid = 2; bool ready = 3; bool draining = 4; }
+message Worker { string context = 1; uint32 pid = 2; bool ready = 3; bool draining = 4; string release = 5; string node = 6; }
+message Policy { uint32 min = 1; uint32 max = 2; uint32 target_in_flight = 3; }
 message Context {
   string name = 1; uint32 desired_replicas = 2; uint32 ready_replicas = 3; uint32 restarts = 4; Failure error = 5;
+  string release = 6; string serving_release = 7; string last_good_release = 8; Policy autoscale = 9;
 }
+message Node { string id = 1; bool healthy = 2; uint32 max_replicas = 3; uint32 replicas = 4; uint64 last_seen_ms = 5; }
 message Status {
   string project = 1; string environment = 2; uint32 revision = 3;
-  bool persistent = 4; bool healthy = 5; repeated Context contexts = 6; repeated Worker workers = 7;
+  bool persistent = 4; bool healthy = 5; repeated Context contexts = 6; repeated Worker workers = 7; repeated Node nodes = 8;
 }
+message SetAutoscaleRequest { string project = 1; string environment = 2; string context = 3; Policy policy = 4; }
+message AutoscaleResult { string context = 1; Policy policy = 2; uint32 revision = 3; }

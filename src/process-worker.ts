@@ -1,25 +1,26 @@
 import { fileURLToPath } from 'node:url'
 import { randomBytes } from 'node:crypto'
-import { resolve } from 'node:path'
-import { MonoripperError, type AppDefinition, type ServeOptions } from './definitions'
+import { MonoripperError, type AppDefinition, type RuntimeOptions } from './definitions'
 import type { WorkerSpec } from './worker'
 import { logEvent, pipeLines, workerLine } from './log'
 
+/** What a worker runs: the resolved app (source checkout or extracted release) and its working directory. */
+export interface WorkerSource { app: AppDefinition; cwd: string; release?: string }
 export interface ManagedWorker {
-  context: string; pid: number; port: number; token: string
+  context: string; pid: number; port: number; token: string; release?: string
   exited: boolean; draining: boolean; published: boolean; inFlight: number
   /** Relayed WebSockets; drain asks each to close with 1001 and waits until the set is empty. */
   sockets: Set<{ goAway(): void }>
   stop(timeoutMs?: number): Promise<void>
   kill(): Promise<void>
 }
-export function websocketLimits(options: ServeOptions) {
+export function websocketLimits(options: RuntimeOptions) {
   const ws = options.http?.websocket
   const maxMessageBytes = ws?.maxMessageBytes ?? 1024 * 1024
   return { maxMessageBytes, maxConnections: ws?.maxConnections ?? 1024, idleTimeoutSeconds: ws?.idleTimeoutSeconds ?? 120,
     maxBufferedBytes: ws?.maxBufferedBytes ?? Math.min(maxMessageBytes * 4, 0x7fffffff) }
 }
-export async function startWorker(context: string, app: AppDefinition, options: ServeOptions,
+export async function startWorker(context: string, source: WorkerSource, options: RuntimeOptions,
   onExit: (worker: ManagedWorker) => void, signal: AbortSignal): Promise<ManagedWorker> {
   const token = randomBytes(32).toString('hex')
   const startupTimeout = options.lifecycle?.startupTimeoutMs ?? 15_000
@@ -32,8 +33,9 @@ export async function startWorker(context: string, app: AppDefinition, options: 
   if (options.control) env[options.control.tokenEnv] = '' // Do not pass the administrative credential to application workers/dotenv.
   const format = options.logging?.format ?? 'text'
   const output = format === 'json' ? 'pipe' : 'inherit'
+  const app = source.app
   const child = Bun.spawn([process.execPath, script], {
-    cwd: resolve(options.root ?? process.cwd()), env, stdout: output, stderr: output,
+    cwd: source.cwd, env, stdout: output, stderr: output,
     ipc(message) {
       if (!message || typeof message !== 'object') return
       if (message.type === 'diagnostic' && typeof message.code === 'string' && typeof message.message === 'string') {
@@ -54,11 +56,11 @@ export async function startWorker(context: string, app: AppDefinition, options: 
   })
   if (format === 'json') {
     for (const [stream, target] of [['stdout', process.stdout], ['stderr', process.stderr]] as const) {
-      const source = child[stream]
-      if (source instanceof ReadableStream) void pipeLines(source, (line, truncated) => { target.write(workerLine(line, context, child.pid, stream, truncated) + '\n') })
+      const piped = child[stream]
+      if (piped instanceof ReadableStream) void pipeLines(piped, (line, truncated) => { target.write(workerLine(line, context, child.pid, stream, truncated) + '\n') })
     }
   }
-  const worker: ManagedWorker = { context, pid: child.pid, port: 0, token, exited: false, draining: false, published: false, inFlight: 0, sockets: new Set(),
+  const worker: ManagedWorker = { context, pid: child.pid, port: 0, token, ...(source.release ? { release: source.release } : {}), exited: false, draining: false, published: false, inFlight: 0, sockets: new Set(),
     stop, async kill() { if (!worker.exited) child.kill('SIGKILL'); await exit } }
   const exit = child.exited.then(code => {
     worker.exited = true

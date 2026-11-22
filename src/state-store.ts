@@ -4,44 +4,93 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { MonoripperError } from './definitions'
 import { assertKeys } from './config'
-import type { StoredOperation } from './control-types'
+import type { AutoscalePolicy, StoredOperation } from './control-types'
 
 export interface Snapshot {
-  schemaVersion: 1
+  schemaVersion: 2
   project: string
   environment: string
   revision: number
   desired: Record<string, number>
+  /** Release mode: desired release digest per context. Empty in source mode. */
+  releases: Record<string, string>
+  /** Release each context last switched its traffic to. */
+  serving: Record<string, string>
+  /** Release of each context's last successful deployment. */
+  lastGood: Record<string, string>
+  autoscale: Record<string, AutoscalePolicy>
   operations: StoredOperation[]
 }
-interface Scope { project: string; environment: string; contexts: string[]; initial: Record<string, number>; directory?: string }
+interface Scope {
+  project: string; environment: string
+  /** Fixed context set of a source-mode app. Release mode leaves it open: deployments can add contexts. */
+  contexts?: string[]
+  initial: Record<string, number>
+  /** Release mode: bootstrap release per context, applied to new state only. */
+  initialReleases?: Record<string, string>
+  directory?: string
+}
+const digest = (value: unknown) => typeof value === 'string' && /^sha256:[a-f0-9]{64}$/.test(value)
+const contextName = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/
+const totalReplicas = 64
 const uint = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 0xffffffff
 const invalid = (): never => { throw new MonoripperError('INVALID_STATE', 'Invalid or incompatible state snapshot; stop the runtime before repairing it') }
 
+/** Version 1 predates releases; its fields carry over unchanged. */
+function migrate(snapshot: unknown): unknown {
+  if (snapshot && typeof snapshot === 'object' && (snapshot as { schemaVersion?: unknown }).schemaVersion === 1) {
+    return { ...snapshot, schemaVersion: 2, releases: {}, serving: {}, lastGood: {}, autoscale: {} }
+  }
+  return snapshot
+}
+
 function validate(snapshot: Snapshot, scope: Scope) {
   try {
-    assertKeys(snapshot, ['schemaVersion', 'project', 'environment', 'revision', 'desired', 'operations'], 'state')
-    if (snapshot.schemaVersion !== 1 || snapshot.project !== scope.project || snapshot.environment !== scope.environment || !uint(snapshot.revision)) invalid()
-    assertKeys(snapshot.desired, scope.contexts, 'desired')
-    if (scope.contexts.some(name => !Object.hasOwn(snapshot.desired, name))) invalid()
-    if (Object.values(snapshot.desired).some(n => !uint(n) || n > 64) || Object.values(snapshot.desired).reduce((a, b) => a + b, 0) > 64) invalid()
+    assertKeys(snapshot, ['schemaVersion', 'project', 'environment', 'revision', 'desired', 'releases', 'serving', 'lastGood', 'autoscale', 'operations'], 'state')
+    if (snapshot.schemaVersion !== 2 || snapshot.project !== scope.project || snapshot.environment !== scope.environment || !uint(snapshot.revision)) invalid()
+    const names = Object.keys(snapshot.desired ?? {})
+    if (scope.contexts) {
+      assertKeys(snapshot.desired, scope.contexts, 'desired')
+      if (scope.contexts.some(name => !Object.hasOwn(snapshot.desired, name))) invalid()
+      if (Object.keys(snapshot.releases).length || Object.keys(snapshot.serving).length || Object.keys(snapshot.lastGood).length) invalid()
+    } else {
+      assertKeys(snapshot.desired, names, 'desired')
+      if (names.some(name => !contextName.test(name) || !digest(snapshot.releases[name]))) invalid()
+      assertKeys(snapshot.releases, names, 'releases')
+      if (Object.keys(snapshot.releases).length !== names.length) invalid()
+    }
+    for (const map of [snapshot.serving, snapshot.lastGood]) {
+      assertKeys(map, names, 'releases')
+      if (Object.values(map).some(value => !digest(value))) invalid()
+    }
+    assertKeys(snapshot.autoscale, names, 'autoscale')
+    for (const policy of Object.values(snapshot.autoscale)) {
+      assertKeys(policy, ['min', 'max', 'targetInFlight'], 'autoscale')
+      if (!uint(policy.min) || !uint(policy.max) || policy.min > policy.max || policy.max > totalReplicas || !uint(policy.targetInFlight) || policy.targetInFlight < 1) invalid()
+    }
+    if (Object.values(snapshot.desired).some(n => !uint(n) || n > totalReplicas) || Object.values(snapshot.desired).reduce((a, b) => a + b, 0) > totalReplicas) invalid()
     if (!Array.isArray(snapshot.operations) || snapshot.operations.length > 10000) invalid()
     const ids = new Set<string>(), requests = new Set<string>(), active = new Set<string>()
     for (const operation of snapshot.operations) {
-      assertKeys(operation, ['id', 'requestId', 'context', 'replicas', 'revision', 'phase', 'createdAt', 'updatedAt', 'error', 'payloadHash', 'previousReplicas'], 'operation')
+      assertKeys(operation, ['id', 'requestId', 'context', 'replicas', 'release', 'revision', 'phase', 'step', 'createdAt', 'updatedAt', 'error', 'warning', 'origin', 'payloadHash', 'previousReplicas', 'previousRelease'], 'operation')
       if (typeof operation.id !== 'string' || !/^[a-f0-9-]{36}$/.test(operation.id) || ids.has(operation.id)) invalid()
       if (typeof operation.requestId !== 'string' || !/^[\w.:-]{1,128}$/.test(operation.requestId) || requests.has(operation.requestId)) invalid()
-      if (!scope.contexts.includes(operation.context) || !uint(operation.replicas) || operation.replicas > 64 || !uint(operation.previousReplicas) || operation.previousReplicas > 64) invalid()
+      if (typeof operation.context !== 'string' || !contextName.test(operation.context) || (scope.contexts && !scope.contexts.includes(operation.context)) || !uint(operation.replicas) || operation.replicas > 64 || !uint(operation.previousReplicas) || operation.previousReplicas > 64) invalid()
       if (!uint(operation.revision) || operation.revision > snapshot.revision || !['accepted', 'applying', 'succeeded', 'failed'].includes(operation.phase)) invalid()
       if (!Number.isSafeInteger(operation.createdAt) || operation.createdAt < 0 || !Number.isSafeInteger(operation.updatedAt) || operation.updatedAt < operation.createdAt) invalid()
       if (typeof operation.payloadHash !== 'string' || !/^[a-f0-9]{64}$/.test(operation.payloadHash)) invalid()
+      if ((operation.release !== undefined && !digest(operation.release)) || (operation.previousRelease !== undefined && !digest(operation.previousRelease))) invalid()
+      if (operation.step !== undefined && !['preparing', 'starting', 'switching', 'draining'].includes(operation.step)) invalid()
+      if (operation.origin !== undefined && !['operator', 'autoscaler'].includes(operation.origin)) invalid()
       if (operation.phase === 'accepted' || operation.phase === 'applying') {
         if (active.has(operation.context) || snapshot.desired[operation.context] !== operation.replicas) invalid()
+        if (operation.release !== undefined && snapshot.releases[operation.context] !== operation.release) invalid()
         active.add(operation.context)
       }
-      if (operation.error) {
-        assertKeys(operation.error, ['code', 'message'], 'error')
-        if (typeof operation.error.code !== 'string' || operation.error.code.length > 80 || typeof operation.error.message !== 'string' || operation.error.message.length > 512) invalid()
+      for (const failure of [operation.error, operation.warning]) {
+        if (!failure) continue
+        assertKeys(failure, ['code', 'message'], 'error')
+        if (typeof failure.code !== 'string' || failure.code.length > 80 || typeof failure.message !== 'string' || failure.message.length > 512) invalid()
       }
       ids.add(operation.id); requests.add(operation.requestId)
     }
@@ -72,15 +121,17 @@ export class StateStore {
           release = async () => { await fd.close(); native.close() }
         } catch (error) { await fd.close(); library?.close(); throw error }
       }
-      const initial: Snapshot = { schemaVersion: 1, project: scope.project, environment: scope.environment, revision: 0,
-        desired: Object.fromEntries(scope.contexts.map(name => [name, scope.initial[name] ?? 0])), operations: [] }
+      const contexts = scope.contexts ?? Object.keys(scope.initialReleases ?? {})
+      const initial: Snapshot = { schemaVersion: 2, project: scope.project, environment: scope.environment, revision: 0,
+        desired: Object.fromEntries(contexts.map(name => [name, scope.initial[name] ?? 0])),
+        releases: scope.contexts ? {} : { ...scope.initialReleases }, serving: {}, lastGood: {}, autoscale: {}, operations: [] }
       let loaded = initial
       if (scope.directory) {
         let file: FileHandle | undefined
         try {
           file = await open(join(scope.directory, 'state.json'), constants.O_RDONLY | constants.O_NOFOLLOW)
           if (!(await file.stat()).isFile() || (await file.stat()).size > 16 * 1024 * 1024) invalid()
-          loaded = JSON.parse(await file.readFile('utf8'))
+          loaded = migrate(JSON.parse(await file.readFile('utf8'))) as Snapshot
         } catch (error) {
           if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) invalid()
         } finally { await file?.close() }

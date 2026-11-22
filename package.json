@@ -24,7 +24,7 @@
   "scripts": {
     "test": "bun test tests",
     "typecheck": "tsc --noEmit",
-    "build": "rm -rf dist && bun build src/index.ts src/cli.ts src/worker.ts --target bun --external elysia --external @grpc/grpc-js --external @grpc/proto-loader --splitting --outdir dist --entry-naming '[name].js' --chunk-naming 'chunk-[hash].js' && cp src/control.proto dist/control.proto && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && bun build src/index.ts src/cli.ts src/worker.ts src/pack-build.ts --target bun --external elysia --external @grpc/grpc-js --external @grpc/proto-loader --splitting --outdir dist --entry-naming '[name].js' --chunk-naming 'chunk-[hash].js' && cp src/control.proto dist/control.proto && tsc -p tsconfig.build.json",
     "check:specs": "python3 scripts/check-specs.py",
     "test:elysia": "bun scripts/test-elysia.ts",
     "test:elysia:postgres": "bun scripts/test-elysia-postgres.ts",

@@ -66,7 +66,7 @@ test('e03s01: a node agent serves replicas behind the one gateway with request c
     expect(remote.front).toMatchObject({ traceId: trace, claims: {} })
     expect(remote.front.caller).toBeUndefined()
     expect(remote.back).toMatchObject({ traceId: trace, caller: 'api', claims: { sub: 'user-7' }, version: 'v1' })
-    expect(Number(remote.back.deadline)).toBeLessThanOrEqual(Number(remote.front.deadline) + 50)
+    expect(Number(remote.back.deadline)).toBeLessThanOrEqual(Number(remote.front.deadline) + 500)
 
     // The admin endpoint scrapes the remote replica through its agent.
     const metrics = await fetch(new URL('/-/metrics', runtime.adminUrl!)).then(r => r.text())

@@ -79,6 +79,9 @@ validation:
   elysia_integration_evidence: specs/verifications/elysia-examples.md
   manual_uat: pending
   bundled_plan_validator: passed_with_nix_pyyaml_all_capsules
+  release_readiness_2026_11_23: typecheck, 156 tests, nix flake check, package smoke, elysia, elysia postgres, landing, container, autobahn, specs and plan-consistency passed
+  hitori_backend_compatibility: passed_typecheck_check_192_tests_with_new_package
+  line_coverage_note: not re-measured after e02/e03
   e02_evidence: specs/verifications/e02-verify.yaml
   e03_evidence: specs/verifications/e03-verify.yaml
   evidence: specs/verifications/e01s03-verify.yaml

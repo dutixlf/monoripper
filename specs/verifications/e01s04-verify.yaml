@@ -44,5 +44,8 @@ findings:
 residual_risks:
   - Cross-replica fan-out is out of scope; ws.publish reaches one replica.
   - Kernel socket buffers are outside maxBufferedBytes accounting.
-  - Not yet exercised against the Hitori backend.
+hitori_backend:
+  date: '2026-11-23'
+  method: temporary copy of ~/Projects/hitori/backend 54e97e3 with vendor/monoripper replaced by the 0.1.0-prototype npm archive; the Hitori repository was not modified
+  result: typecheck, monoripper check and 192 Hitori tests passed, including tests/e2e/live.test.ts WebSockets through the gateway (auth refusal, push, 4001/4002, 1009, idle drop, metrics)
 manual_uat: pending

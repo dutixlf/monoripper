@@ -26,7 +26,7 @@ export interface ServiceFetchInit extends RequestInit {
 export interface Services { fetch(path: string, init?: ServiceFetchInit): Promise<Response> }
 export interface ContextDefinition {
   /** `signal` aborts when the replica starts stopping; use it to end background loops started in onStart. */
-  create(input: { app: AnyElysia; resources: ResourceAccess; signal: AbortSignal; services: Services }): AnyElysia | Promise<AnyElysia>
+  create(input: { app: AnyElysia; resources: ResourceAccess; signal: AbortSignal }): AnyElysia | Promise<AnyElysia>
   stop?(): void | Promise<void>
   /** Prometheus text exposition for this replica. The runtime adds `context` and `worker` labels. */
   metrics?(): string | Promise<string>

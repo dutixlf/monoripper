@@ -52,10 +52,10 @@ export function requestContext(request: Request): RequestContext {
   }
 }
 
-/** The worker-side client; the runtime supplies its listener URL and credential through the environment. */
-export function createServices(url = process.env.MONORIPPER_SERVICES_URL, token = process.env.MONORIPPER_SERVICES_TOKEN): Services {
-  return {
+/** Calls other contexts from inside a replica; the runtime supplies the listener URL and credential through the environment. */
+export const services: Services = {
     async fetch(path: string, init: ServiceFetchInit = {}) {
+      const url = process.env.MONORIPPER_SERVICES_URL, token = process.env.MONORIPPER_SERVICES_TOKEN
       if (!url || !token) throw new MonoripperError('SERVICES_UNAVAILABLE', 'services.fetch is available inside a running context only')
       if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) throw new MonoripperError('INVALID_ARGUMENT', 'services.fetch takes a path such as /billing/invoices')
       const { request, claims, ...rest } = init
@@ -74,5 +74,4 @@ export function createServices(url = process.env.MONORIPPER_SERVICES_URL, token 
       const signal = rest.signal && timeout ? AbortSignal.any([rest.signal, timeout]) : rest.signal ?? timeout
       return fetch(new URL(path, url), { ...rest, headers, redirect: 'manual', proxy: '', ...(signal ? { signal } : {}) })
     },
-  }
 }

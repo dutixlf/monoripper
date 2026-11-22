@@ -17,6 +17,8 @@ manual_walkthrough:
   by: agent, not the user
   steps: examples/cluster/README.md controller + node-b, scale to 3 across nodes, round-robin pids, autoscale policy rejects manual scale, stop in either order
   result: passed after adding graceful agent leave
+consumer_compatibility:
+  hitori_backend: typecheck, check and 192 tests pass with the new package (see e01s04-verify.yaml); services moved to an SDK export so ContextDefinition.create keeps its original input type
 findings_fixed_during_work:
   - TLS WebSocket handshakes were written before the TLS handshake and lost; the request is now written from open().
   - Agents sent their internal worker id for services calls; they now send the controller-assigned id.
@@ -27,5 +29,4 @@ residual_risks:
   - One shared cluster credential (ADR 0003); a compromised node compromises the cluster.
   - Partitions can briefly run more processes than desired; no fencing or exactly-once.
   - No controller or ingress HA. Remote replica metrics are scraped through the agent (verified in two-nodes.test.ts).
-  - Hitori backend WebSocket traffic has not been exercised.
 manual_uat: pending

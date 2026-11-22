@@ -2,7 +2,6 @@ import { Elysia, type AnyElysia } from 'elysia'
 import { pathToFileURL } from 'node:url'
 import type { AppDefinition, ContextDefinition, ResourceDefinition } from './definitions'
 import { ownsRoute } from './ownership'
-import { createServices } from './request-context'
 
 export interface WorkerSpec {
   context: string
@@ -83,7 +82,6 @@ async function start(spec: WorkerSpec): Promise<void> {
   const created = await context.create({
     app: base,
     signal: lifetime.signal,
-    services: createServices(),
     resources: { get<T>(name: string): T {
       if (!values.has(name)) throw new Error(`Resource not initialized: ${name}`)
       return values.get(name) as T

@@ -57,8 +57,8 @@ export function clusterApp(version: string) {
   billing: { entry: './billing.ts', owns: [{ method: '*', path: '/billing/*' }] },
 } }
 `,
-    'api.ts': `import { defineContext, requestContext } from '{{sdk}}'
-export default defineContext({ create: ({ app, services }) => app
+    'api.ts': `import { defineContext, requestContext, services } from '{{sdk}}'
+export default defineContext({ create: ({ app }) => app
   .get('/api/whoami', () => ({ version: '${version}', pid: process.pid, ppid: process.ppid }))
   .get('/api/call', async ({ request }) => {
     const response = await services.fetch('/billing/echo', { request, claims: { sub: 'user-7' } })

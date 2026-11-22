@@ -28,7 +28,7 @@ Remote replicas in status with `node`; request envelope headers; `requestContext
 Workers listen on loopback only. Worker, services and cluster credentials never reach application environments.
 
 ## 9. Startup interface
-Controller: `cluster: { host, port, tls, caFile, tokenEnv, heartbeatTimeoutMs }`. Node: `monoripper node --config`. Context: `create({ services })`, `requestContext(request)`.
+Controller: `cluster: { host, port, tls, caFile, tokenEnv, heartbeatTimeoutMs }`. Node: `monoripper node --config`. Context: `import { services, requestContext } from 'monoripper'`.
 
 ## 10. Storage
 No new durable state; node membership is observed from heartbeats.

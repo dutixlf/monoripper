@@ -325,8 +325,10 @@ The gateway adds an envelope to every request: a trace id (from a valid W3C `tra
 Clients cannot supply any `x-monoripper-*` header. A context reads it with `requestContext(request)` → `{ traceId, requestId, deadline, caller?, claims }`.
 
 ```ts
+import { defineContext, requestContext, services } from 'monoripper'
+
 export default defineContext({
-  create: ({ app, services }) => app.get('/api/orders/:id', async ({ request, params }) => {
+  create: ({ app }) => app.get('/api/orders/:id', async ({ request, params }) => {
     const user = await authenticate(request) // business auth stays in the context
     const invoice = await services.fetch(`/api/billing/invoices/${params.id}`, { request, claims: { sub: user.id } })
     return { order: params.id, invoice: await invoice.json() }

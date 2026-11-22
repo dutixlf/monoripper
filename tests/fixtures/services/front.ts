@@ -1,7 +1,7 @@
-import { defineContext, requestContext } from '../../../src/index'
+import { defineContext, requestContext, services } from '../../../src/index'
 
 export default defineContext({
-  create: ({ app, services }) => app
+  create: ({ app }) => app
     .get('/front/call', async ({ request }) => {
       const response = await services.fetch('/back/echo?from=front', { request, claims: { sub: 'user-1', role: 'admin', 'bad name': 'x' }, headers: { 'x-monoripper-caller': 'forged' } })
       return { front: requestContext(request), back: await response.json(), status: response.status }

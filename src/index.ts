@@ -3,7 +3,7 @@ export { serve, type Runtime } from './runtime'
 export { checkApp, type ImportDiagnostic } from './check'
 export { loadConfig, loadRuntimeConfig } from './config'
 export { requestClientAddress } from './client-ip'
-export { requestContext, type RequestContext } from './request-context'
+export { requestContext, services, type RequestContext } from './request-context'
 import { serve } from './runtime'
 import type { RegistryConfig } from './registry'
 

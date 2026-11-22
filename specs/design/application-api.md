@@ -93,11 +93,11 @@ Version-dependent route metadata access stays in the adapter and e01s01 tests. I
 
 ```ts
 // src/contexts/user.ts
-import { defineContext } from 'monoripper'
+import { defineContext, services } from 'monoripper'
 import { hashPassword } from '../shared/password'
 
 export default defineContext({
-  async create({ app, resources, services }) {
+  async create({ app, resources }) {
     // app is an Elysia instance with adapter hooks installed BEFORE route registration.
     const db = resources.get('db')
 

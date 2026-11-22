@@ -18,7 +18,7 @@ import { ReleaseCache } from './release-cache'
 import { inspectRelease } from './release'
 import { validDigest } from './archive'
 import { registryBase, validToken, type RegistryEndpoint } from './registry-client'
-import type { ControlStatus, Operation, SetContextRequest, WorkerStatus } from './control-types'
+import type { AutoscalePolicy, ControlStatus, Operation, SetAutoscaleRequest, SetContextRequest, WorkerStatus } from './control-types'
 
 export interface Runtime {
   readonly url: URL
@@ -29,6 +29,8 @@ export interface Runtime {
   status(): WorkerStatus[]
   getStatus(): ControlStatus
   setContext(input: SetContextRequest): Promise<Operation>
+  /** Enables (policy) or disables (no policy) autoscaling for one context; manual scaling is then rejected. */
+  setAutoscale(input: SetAutoscaleRequest): Promise<{ context: string; policy?: AutoscalePolicy; revision: number }>
   getOperation(id: string): Operation
   waitOperation(id: string, timeoutMs?: number): Promise<Operation>
   stop(): Promise<void>
@@ -252,6 +254,7 @@ export async function serve(input: ServeOptions | ReleaseServeOptions): Promise<
     assertStarting()
     cluster?.start()
     await controller.initialize()
+    controller.autoscaler.start()
     assertStarting()
     server = Bun.serve<WebSocketRelay>({
       hostname: options.http?.host ?? '127.0.0.1', port: options.http?.port ?? 3000,
@@ -306,7 +309,7 @@ export async function serve(input: ServeOptions | ReleaseServeOptions): Promise<
     return {
       url: new URL(gateway.url), ...(control ? { controlAddress: control.address } : {}), ...(adminServer ? { adminUrl: new URL(adminServer.url) } : {}),
       ...(cluster?.url ? { clusterUrl: cluster.url } : {}),
-      status: () => pool.status(), getStatus: () => controller.status(), setContext: input => controller.set(input), getOperation: id => controller.operation(id),
+      status: () => pool.status(), getStatus: () => controller.status(), setContext: input => controller.set(input), setAutoscale: input => controller.setAutoscale(input), getOperation: id => controller.operation(id),
       async waitOperation(id, timeoutMs = 30_000) {
         if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 0x7fffffff) throw new MonoripperError('INVALID_ARGUMENT', 'Invalid operation wait timeout')
         const deadline = performance.now() + timeoutMs

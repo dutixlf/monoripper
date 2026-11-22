@@ -41,7 +41,8 @@ export async function startControlServer(controller: Controller, config: NonNull
       ...(input.release ? { release: input.release } : {}) })),
     GetStatus: handler(() => controller.status()),
     GetOperation: handler<{ project: string; environment: string; id: string }>(input => controller.operation(input.id)),
-    SetAutoscale: handler(() => { throw new MonoripperError('UNIMPLEMENTED', 'Autoscaling is not implemented') }),
+    SetAutoscale: handler<{ project: string; environment: string; context: string; policy?: { min: number; max: number; targetInFlight: number } | null }>(input =>
+      controller.setAutoscale({ project: input.project, environment: input.environment, context: input.context, ...(input.policy ? { policy: input.policy } : {}) })),
   })
   const host = config.host ?? '127.0.0.1'
   if (!config.tls && !['127.0.0.1', '::1'].includes(host)) throw new MonoripperError('INVALID_CONFIG', 'Control without TLS permits loopback only')

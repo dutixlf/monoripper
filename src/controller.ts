@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import { MonoripperError, type AppDefinition, type Ownership, type RuntimeOptions } from './definitions'
 import { assertKeys } from './config'
 import { owns, validateApp } from './ownership'
-import { publicOperation, type ControlError, type ControlStatus, type OperationStep, type SetContextRequest, type StoredOperation } from './control-types'
+import { publicOperation, type AutoscalePolicy, type ControlError, type ControlStatus, type OperationStep, type SetAutoscaleRequest, type SetContextRequest, type StoredOperation } from './control-types'
+import { Autoscaler, defaultAutoscale } from './autoscale'
 import type { StateStore } from './state-store'
 import type { WorkerPool } from './worker-pool'
 import type { WorkerSource } from './process-worker'
@@ -29,7 +30,45 @@ export class Controller {
   servicesUrl?: string
   /** Node agents, when the runtime runs a cluster. */
   cluster?: import('./cluster').Cluster
-  constructor(readonly store: StateStore, readonly pool: WorkerPool, private options: RuntimeOptions, private source: ControllerSource) {}
+  private compatibility = new Map<string, import('./release').ReleaseCompatibility>()
+  readonly autoscaler: Autoscaler
+  constructor(readonly store: StateStore, readonly pool: WorkerPool, private options: RuntimeOptions, private source: ControllerSource) {
+    this.autoscaler = new Autoscaler({ ...defaultAutoscale, ...options.autoscale }, {
+      policies: () => this.store.healthy && !this.closing ? this.store.read().autoscale : {},
+      current: context => this.store.read().desired[context] ?? 0,
+      inFlight: context => this.pool.inFlight(context),
+      free: context => Math.max(0, this.pool.maxReplicas - this.pool.processes)
+        + (this.cluster?.placeable(this.compatibility.get(context)).reduce((sum, node) => sum + node.free, 0) ?? 0),
+      busy: context => this.store.read().operations.some(operation => operation.context === context && active(operation)),
+      apply: async (context, replicas) => {
+        const state = this.store.read()
+        await this.set({ project: state.project, environment: state.environment, requestId: `autoscale:${randomUUID()}`, expectedRevision: state.revision, context, replicas }, 'autoscaler')
+      },
+    })
+  }
+
+  /** Enables (policy) or disables (no policy) bounded autoscaling for one context. */
+  async setAutoscale(input: SetAutoscaleRequest): Promise<{ context: string; policy?: AutoscalePolicy; revision: number }> {
+    assertKeys(input, ['project', 'environment', 'context', 'policy'], 'SetAutoscale')
+    if (this.closing) throw new MonoripperError('SHUTTING_DOWN', 'Controller is shutting down')
+    const state = this.store.read()
+    if (input.project !== state.project || input.environment !== state.environment) throw new MonoripperError('PERMISSION_DENIED', 'Wrong project or environment')
+    if (typeof input.context !== 'string' || !Object.hasOwn(state.desired, input.context)) throw new MonoripperError('INVALID_ARGUMENT', 'Unknown context')
+    const policy = input.policy
+    if (policy !== undefined) {
+      assertKeys(policy, ['min', 'max', 'targetInFlight'], 'autoscale policy')
+      const int = (value: unknown, low: number, high: number) => Number.isSafeInteger(value) && Number(value) >= low && Number(value) <= high
+      if (!int(policy.min, 1, 64) || !int(policy.max, 1, 64) || policy.min > policy.max || !int(policy.targetInFlight, 1, 1_000_000)) {
+        throw new MonoripperError('INVALID_ARGUMENT', 'Autoscale needs 1 <= min <= max <= 64 and targetInFlight >= 1')
+      }
+    }
+    return this.store.update(next => {
+      if (policy) next.autoscale[input.context] = { min: policy.min, max: policy.max, targetInFlight: policy.targetInFlight }
+      else delete next.autoscale[input.context]
+      next.revision++
+      return { context: input.context, ...(policy ? { policy: next.autoscale[input.context]! } : {}), revision: next.revision }
+    })
+  }
 
   get releaseMode() { return this.source.kind === 'release' }
 
@@ -133,6 +172,12 @@ export class Controller {
         payloadHash, revision: ++next.revision, phase: 'accepted', createdAt: Date.now(), updatedAt: Date.now(), ...(origin === 'autoscaler' ? { origin } : {}) }
       next.desired[input.context] = replicas
       if (input.release) next.releases[input.context] = input.release
+      if (origin === 'autoscaler') {
+        // Autoscaler operations are not operator retries: keep only the latest 100 finished ones so they cannot fill the history.
+        const finished = next.operations.filter(operation => operation.origin === 'autoscaler' && !active(operation))
+        const drop = new Set(finished.slice(0, Math.max(0, finished.length - 99)))
+        next.operations = next.operations.filter(operation => !drop.has(operation))
+      }
       next.operations.push(created)
       return created
     })
@@ -153,6 +198,7 @@ export class Controller {
     this.closing = true
     for (const timer of this.timers.values()) clearTimeout(timer)
     this.timers.clear()
+    this.autoscaler.stop()
     this.pool.cancelStarts()
   }
   close(): Promise<void> {
@@ -182,6 +228,7 @@ export class Controller {
     if (!loaded.manifest.contexts[context]) throw new MonoripperError('RELEASE_CONTEXT_MISSING', `Release ${release} does not declare context ${context}`)
     const cwd = join(this.source.workRoot, context)
     await mkdir(cwd, { recursive: true, mode: 0o700 })
+    this.compatibility.set(context, loaded.manifest.compatibility)
     return { app: loaded.app, cwd, release, compatibility: loaded.manifest.compatibility, ...services }
   }
   private async step(id: string, step: OperationStep) {

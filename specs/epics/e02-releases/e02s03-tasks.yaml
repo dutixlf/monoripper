@@ -1,0 +1,14 @@
+story_id: e02s03
+title: Deploy, rollback and CI/CD
+spec: e02s03-deploy-rollback.md
+status: passing
+bcps: 8
+tasks:
+  - id: 1
+    description: Atomic switch with drain, failed pre-switch keeps the previous release, rollback, ownership conflict, new context, capacity, crash after switch, partial CLI rollout, staging to production gate.
+    verify: test -f tests/e2e/deploy.test.ts && bun test tests/e2e/deploy.test.ts
+    risk: P0
+    status: passing
+    allure:
+      severity: critical
+      categories: [deploy, lifecycle, faults]

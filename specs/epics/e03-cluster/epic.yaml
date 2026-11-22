@@ -1,7 +1,7 @@
 id: e03
 title: Multiple nodes and bounded autoscaling
-status: planned
-planning_status: roadmap_only
+status: in_progress
+planning_status: detailed
 purpose: Place replicas on connected machines while preserving request metadata and capacity limits.
 depends_on: [e02]
 reference: ../../ROADMAP.md
@@ -10,15 +10,23 @@ stories:
     title: Remote replica and request context
     delta: ADDED
     bcps: 8
-    status: planned
+    status: awaiting_uat
+    spec: e03s01-remote-replica.md
+    tasks: e03s01-tasks.yaml
   - id: e03s02
     title: Node placement and recovery
     delta: ADDED
     bcps: 8
-    status: planned
+    status: awaiting_uat
+    spec: e03s02-placement-recovery.md
+    tasks: e03s02-tasks.yaml
   - id: e03s03
     title: Bounded autoscaling
     delta: ADDED
     bcps: 5
-    status: planned
-implementation_gate: After e02, detail story specs/tasks and pass the consistency check.
+    status: awaiting_uat
+    spec: e03s03-autoscaling.md
+    tasks: e03s03-tasks.yaml
+constraints:
+  - The user authorized implementation of the full release plan before e01 UAT on 2026-11-22.
+  - Planned checks are not completed verification; user UAT remains required.

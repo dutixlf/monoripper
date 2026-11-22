@@ -1,0 +1,30 @@
+story_id: e02s01
+title: Portable release
+spec: e02s01-portable-release.md
+status: passing
+bcps: 5
+tasks:
+  - id: 1
+    description: Deterministic hardened ustar+gzip writer and reader with limits.
+    verify: test -f tests/unit/archive.test.ts && bun test tests/unit/archive.test.ts
+    risk: P1
+    status: passing
+    allure:
+      severity: normal
+      categories: [releases, Security Review]
+  - id: 2
+    description: pack with shared chunks, external Elysia/SDK, location-independent digest, no secrets; release-mode serve from a read-only cache without the source checkout; incompatible releases refused.
+    verify: test -f tests/e2e/release-pack.test.ts && bun test tests/e2e/release-pack.test.ts
+    risk: P1
+    status: passing
+    allure:
+      severity: normal
+      categories: [releases]
+  - id: 3
+    description: Installed npm package packs a release and serves it.
+    verify: test -f scripts/test-package.ts && bun run test:package
+    risk: P2
+    status: passing
+    allure:
+      severity: normal
+      categories: [package]

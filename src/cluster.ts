@@ -127,6 +127,8 @@ export class Cluster {
       exited: false, draining: false, published: false, inFlight: 0, sockets: new Set(),
       stop: async timeoutMs => {
         if (lost) return
+        // A node that left or missed heartbeats cannot confirm a stop; reconciliation stops the process when it returns.
+        if (!node.healthy) { lose(); return }
         try {
           const stopped = await this.agent(node, `/v1/workers/${id}/stop`, { timeoutMs: timeoutMs ?? settings.shutdownTimeoutMs }, (timeoutMs ?? settings.shutdownTimeoutMs) + 5000)
           const body = await stopped.json().catch(() => ({})) as { error?: string }
@@ -155,6 +157,16 @@ export class Cluster {
       try { beat = await request.json() as Heartbeat } catch { return publicError(400, 'INVALID_HEARTBEAT') }
       if (beat.project !== this.scope.project || beat.environment !== this.scope.environment) return publicError(403, 'WRONG_SCOPE')
       return Response.json({ stop: this.heartbeat(beat) })
+    }
+    if (url.pathname === '/v1/nodes/leave' && request.method === 'POST') {
+      // A gracefully stopping agent has stopped its replicas itself; withdraw them now instead of after the heartbeat timeout.
+      const { id, instance } = await request.json().catch(() => ({})) as { id?: unknown; instance?: unknown }
+      const node = typeof id === 'string' ? this.nodes.get(id) : undefined
+      if (node && node.instance === instance) {
+        node.healthy = false
+        for (const record of [...node.workers.values()]) record.lose()
+      }
+      return Response.json({ ok: true })
     }
     if (url.pathname.startsWith('/v1/services/')) {
       const node = this.nodes.get(request.headers.get('x-monoripper-node') ?? '')

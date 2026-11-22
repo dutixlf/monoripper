@@ -1,0 +1,14 @@
+story_id: e02s02
+title: Private registry
+spec: e02s02-private-registry.md
+status: passing
+bcps: 8
+tasks:
+  - id: 1
+    description: Registry auth matrix, digest/project/archive validation, traversal, links, size limits, interrupted transfers and storage exhaustion.
+    verify: test -f tests/e2e/registry.test.ts && bun test tests/e2e/registry.test.ts
+    risk: P0
+    status: passing
+    allure:
+      severity: critical
+      categories: [registry, Security Review, faults]

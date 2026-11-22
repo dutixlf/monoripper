@@ -1,0 +1,14 @@
+story_id: e03s02
+title: Node placement and recovery
+spec: e03s02-placement-recovery.md
+status: passing
+bcps: 8
+tasks:
+  - id: 1
+    description: Heartbeat loss, partition reconnect, registry outage, capacity limit and controller crash recovery with separate processes.
+    verify: test -f tests/e2e/node-recovery.test.ts && bun test tests/e2e/node-recovery.test.ts
+    risk: P0
+    status: passing
+    allure:
+      severity: critical
+      categories: [cluster, faults]

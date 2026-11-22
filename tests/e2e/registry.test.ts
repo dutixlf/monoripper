@@ -72,7 +72,7 @@ test('rejects digest mismatches, foreign projects, links, invalid archives, trav
   }
   const large = new Uint8Array(300 * 1024)
   expect((await put('shop', sha256Digest(large), large)).status).toBe(413)
-  expect(await readdir(join(directory, 'data/tmp'))).toEqual([])
+  expect(await readdir(join(directory, 'data/.monoripper-uploads'))).toEqual([])
   expect(await readdir(join(directory, 'data/projects/shop'))).toEqual([digest.slice(7)])
 })
 
@@ -89,7 +89,7 @@ test('an interrupted upload commits nothing; an interrupted or tampered download
   })
   await Bun.sleep(200)
   expect((await fetch(blob('shop', other.digest), { headers: auth(credentials.read) })).status).toBe(404)
-  expect(await readdir(join(directory, 'data/tmp'))).toEqual([])
+  expect(await readdir(join(directory, 'data/.monoripper-uploads'))).toEqual([])
 
   const cut = createServer(socket => socket.once('data', () => {
     socket.write(`HTTP/1.1 200 OK\r\nContent-Length: ${archive.length}\r\nContent-Type: application/gzip\r\n\r\n`)
@@ -132,7 +132,7 @@ test('a full disk returns 507, keeps nothing, and the registry keeps serving', a
     const line = JSON.parse(new TextDecoder().decode((await reader.read()).value).trim().split('\n')[0]!)
     const endpoint = { url: line.url, token: credentials.write }
     await expect(publishRelease(endpoint, largeBytes)).rejects.toMatchObject({ code: 'STORAGE_FULL' })
-    expect(await readdir(join(data, 'tmp'))).toEqual([])
+    expect(await readdir(join(data, '.monoripper-uploads'))).toEqual([])
     expect((await publishRelease(endpoint, archive)).created).toBe(true)
     expect((await fetch(new URL('/healthz', line.url))).status).toBe(200)
   } finally { child.kill('SIGTERM'); await child.exited }

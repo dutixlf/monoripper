@@ -41,5 +41,24 @@ try {
 console.log('PASS: installed npm archive starts its bundled worker outside the source checkout')
 `)
   await run([process.execPath, 'smoke.ts'], temp)
+  await writeFile(join(temp, 'app.ts'), `import {defineApp} from 'monoripper'
+export default defineApp({project:'consumer',contexts:{api:{entry:'./context.ts',owns:[{method:'GET',path:'/status'}]}}})
+`)
+  await writeFile(join(temp, 'release-smoke.ts'), `
+import {strict as assert} from 'node:assert'
+import {rm} from 'node:fs/promises'
+import {monoripper,pack} from 'monoripper'
+const built=await pack({app:'./app.ts',out:'./release.tar.gz',label:'smoke'})
+assert.match(built.digest,/^sha256:[a-f0-9]{64}$/)
+await rm('./context.ts')
+const runtime=await monoripper.serve({release:'./release.tar.gz',root:import.meta.dir,initial:{api:{replicas:1}},http:{port:0},dataDir:'./release-state'})
+try {
+ const response=await fetch(new URL('/status',runtime.url))
+ assert.equal(response.status,200)
+ assert.equal(runtime.getStatus().contexts[0].release,built.digest)
+} finally {await runtime.stop()}
+console.log('PASS: installed package packs a release and serves it without the source module')
+`)
+  await run([process.execPath, 'release-smoke.ts'], temp)
   await run([join(temp, 'node_modules/.bin/monoripper'), '--help'], temp)
 } finally { await rm(temp, { recursive: true, force: true }) }

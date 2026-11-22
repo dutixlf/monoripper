@@ -78,9 +78,10 @@ export async function startRegistry(input: RegistryConfig): Promise<Registry> {
     credentials.set(project, { read: Buffer.from(`Bearer ${read}`), write: Buffer.from(`Bearer ${write}`) })
   }
   const root = resolve(config.dataDir)
-  await mkdir(join(root, 'tmp'), { recursive: true, mode: 0o700 })
-  await rm(join(root, 'tmp'), { recursive: true, force: true }) // Leftovers of interrupted uploads are never committed.
-  await mkdir(join(root, 'tmp'), { recursive: true, mode: 0o700 })
+  // A registry-specific name, so a misconfigured dataDir can never point the cleanup at a shared directory such as /tmp.
+  const uploads = join(root, '.monoripper-uploads')
+  await rm(uploads, { recursive: true, force: true }) // Leftovers of interrupted uploads are never committed.
+  await mkdir(uploads, { recursive: true, mode: 0o700 })
   const equal = (a: Buffer, b: Buffer) => a.length === b.length && timingSafeEqual(a, b)
   const authorized = (request: Request, project: string, access: 'read' | 'write') => {
     const scope = credentials.get(project)
@@ -98,7 +99,7 @@ export async function startRegistry(input: RegistryConfig): Promise<Registry> {
       await request.body?.cancel().catch(() => {})
       return Response.json({ project, digest, created: false })
     }
-    const stage = join(root, 'tmp', crypto.randomUUID())
+    const stage = join(uploads, crypto.randomUUID())
     try {
       await mkdir(stage, { mode: 0o700 })
       const hasher = new Bun.CryptoHasher('sha256')

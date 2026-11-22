@@ -45,19 +45,21 @@ def check():
             if local and not (path.parent / local).is_file():
                 errors.append(f"{name}: broken local link: {target}")
 
-    capsule = SPECS / "epics/e01-local-runtime"
-    for number in range(1, 5):
-        story = f"e01s{number:02}"
-        documents = list(capsule.glob(f"{story}-*.md"))
-        if len(documents) != 1:
-            errors.append(f"{story}: expected one story specification")
-            continue
-        text = documents[0].read_text(encoding="utf-8")
-        sections = re.findall(r"^## (\d+)\.", text, re.MULTILINE)
-        if sections != [str(i) for i in range(1, 21)]:
-            errors.append(f"{story}: expected numbered sections 1..20")
-        if not (capsule / f"{story}-tasks.yaml").is_file():
-            errors.append(f"{story}: missing tasks ledger")
+    capsules = {"e01-local-runtime": ("e01", 4), "e02-releases": ("e02", 3), "e03-cluster": ("e03", 3)}
+    for directory, (epic, count) in capsules.items():
+        capsule = SPECS / "epics" / directory
+        for number in range(1, count + 1):
+            story = f"{epic}s{number:02}"
+            documents = list(capsule.glob(f"{story}-*.md"))
+            if len(documents) != 1:
+                errors.append(f"{story}: expected one story specification")
+                continue
+            text = documents[0].read_text(encoding="utf-8")
+            sections = re.findall(r"^## (\d+)\.", text, re.MULTILINE)
+            if sections != [str(i) for i in range(1, 21)]:
+                errors.append(f"{story}: expected numbered sections 1..20")
+            if not (capsule / f"{story}-tasks.yaml").is_file():
+                errors.append(f"{story}: missing tasks ledger")
 
     invariants = {
         "tech-architecture/tech-stack.md": ("Desired state", "single writer", "sandbox"),

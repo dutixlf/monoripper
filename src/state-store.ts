@@ -124,7 +124,8 @@ export class StateStore {
       const contexts = scope.contexts ?? Object.keys(scope.initialReleases ?? {})
       const initial: Snapshot = { schemaVersion: 2, project: scope.project, environment: scope.environment, revision: 0,
         desired: Object.fromEntries(contexts.map(name => [name, scope.initial[name] ?? 0])),
-        releases: scope.contexts ? {} : { ...scope.initialReleases }, serving: {}, lastGood: {}, autoscale: {}, operations: [] }
+        // The bootstrap release is what new state serves, so it is also its first last-good release.
+        releases: scope.contexts ? {} : { ...scope.initialReleases }, serving: scope.contexts ? {} : { ...scope.initialReleases }, lastGood: scope.contexts ? {} : { ...scope.initialReleases }, autoscale: {}, operations: [] }
       let loaded = initial
       if (scope.directory) {
         let file: FileHandle | undefined

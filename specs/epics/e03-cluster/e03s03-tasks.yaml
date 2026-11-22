@@ -1,0 +1,22 @@
+story_id: e03s03
+title: Bounded autoscaling
+spec: e03s03-autoscaling.md
+status: passing
+bcps: 5
+tasks:
+  - id: 1
+    description: Deterministic decision function and loop with a fake clock.
+    verify: test -f tests/unit/autoscale.test.ts && bun test tests/unit/autoscale.test.ts
+    risk: P1
+    status: passing
+    allure:
+      severity: normal
+      categories: [autoscale]
+  - id: 2
+    description: Synthetic load scales within max and back to min; manual scaling rejected while active.
+    verify: test -f tests/e2e/autoscale.test.ts && bun test tests/e2e/autoscale.test.ts
+    risk: P1
+    status: passing
+    allure:
+      severity: normal
+      categories: [autoscale, lifecycle]

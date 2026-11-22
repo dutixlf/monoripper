@@ -1,0 +1,72 @@
+# Example GitHub Actions pipeline. Copy it to .github/workflows/ of your application and adapt names.
+# Build once, publish one digest, deploy the same release.json to staging and then production.
+name: release
+on:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.3.13 } # The same Bun as the runtimes; releases pin it.
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck && bun test
+      # monoripper is a pinned dependency of the application; never fetch an unpinned latest CLI.
+      - run: bun x monoripper check --app ./monoripper.app.ts
+      - run: bun x monoripper pack --app ./monoripper.app.ts --out ./release.tar.gz --label "${GITHUB_SHA::12}"
+      - run: bun x monoripper publish ./release.tar.gz --registry "$REGISTRY_URL" --output ./release.json
+        env:
+          REGISTRY_URL: ${{ vars.MONORIPPER_REGISTRY_URL }}
+          MONORIPPER_REGISTRY_TOKEN: ${{ secrets.MONORIPPER_REGISTRY_WRITE_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with: { name: release, path: release.json }
+  deploy-staging:
+    needs: build
+    environment: staging # Configure required reviewers on production for approval.
+    # One deployment per environment at a time, so a late older build cannot overwrite a newer one.
+    concurrency: { group: deploy-staging, cancel-in-progress: false }
+    runs-on: [self-hosted, private-network] # Control is not exposed to the internet.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.3.13 }
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with: { name: release }
+      - run: printf '%s' "$CONTROLLER_CA" > controller-ca.pem
+        env: { CONTROLLER_CA: "${{ vars.MONORIPPER_CONTROLLER_CA }}" }
+      # --request-id makes a rerun of this job return the original operations instead of deploying twice.
+      - run: >
+          bun x monoripper deploy --controller "$CONTROLLER" --ca-file controller-ca.pem
+          --project shop --environment staging
+          --release ./release.json --contexts user,billing
+          --request-id "run-${GITHUB_RUN_ID}-staging" --wait --timeout-ms 600000
+        env:
+          CONTROLLER: ${{ vars.MONORIPPER_CONTROLLER }}
+          MONORIPPER_CONTROL_TOKEN: ${{ secrets.MONORIPPER_CONTROL_TOKEN }}
+  deploy-production:
+    needs: [build, deploy-staging]
+    environment: production # Configure required reviewers on production for approval.
+    # One deployment per environment at a time, so a late older build cannot overwrite a newer one.
+    concurrency: { group: deploy-production, cancel-in-progress: false }
+    runs-on: [self-hosted, private-network] # Control is not exposed to the internet.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.3.13 }
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with: { name: release }
+      - run: printf '%s' "$CONTROLLER_CA" > controller-ca.pem
+        env: { CONTROLLER_CA: "${{ vars.MONORIPPER_CONTROLLER_CA }}" }
+      # --request-id makes a rerun of this job return the original operations instead of deploying twice.
+      - run: >
+          bun x monoripper deploy --controller "$CONTROLLER" --ca-file controller-ca.pem
+          --project shop --environment production
+          --release ./release.json --contexts user,billing
+          --request-id "run-${GITHUB_RUN_ID}-production" --wait --timeout-ms 600000
+        env:
+          CONTROLLER: ${{ vars.MONORIPPER_CONTROLLER }}
+          MONORIPPER_CONTROL_TOKEN: ${{ secrets.MONORIPPER_CONTROL_TOKEN }}

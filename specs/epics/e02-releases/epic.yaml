@@ -1,7 +1,7 @@
 id: e02
 title: Registry and version updates
-status: planned
-planning_status: roadmap_only
+status: in_progress
+planning_status: detailed
 purpose: Deliver built artifacts and update selected contexts without modifying live files.
 depends_on: [e01]
 reference: ../../ROADMAP.md
@@ -10,15 +10,23 @@ stories:
     title: Portable release
     delta: ADDED
     bcps: 5
-    status: planned
+    status: awaiting_uat
+    spec: e02s01-portable-release.md
+    tasks: e02s01-tasks.yaml
   - id: e02s02
     title: Private registry
     delta: ADDED
     bcps: 8
-    status: planned
+    status: awaiting_uat
+    spec: e02s02-private-registry.md
+    tasks: e02s02-tasks.yaml
   - id: e02s03
     title: Deploy, rollback, and CI/CD
     delta: ADDED
     bcps: 8
-    status: planned
-implementation_gate: After e01, detail story specs/tasks and pass the consistency check.
+    status: awaiting_uat
+    spec: e02s03-deploy-rollback.md
+    tasks: e02s03-tasks.yaml
+constraints:
+  - The user authorized implementation of the full release plan before e01 UAT on 2026-11-22.
+  - Planned checks are not completed verification; user UAT remains required.

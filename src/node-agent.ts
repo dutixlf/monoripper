@@ -264,6 +264,9 @@ export async function startNode(input: NodeConfig): Promise<NodeAgent> {
       abort.abort()
       for (const relay of relays) relay.goAway()
       await Promise.allSettled([...workers.keys()].map(id => stopWorker(id)))
+      await fetch(new URL('/v1/nodes/leave', config.controller.url), { method: 'POST', body: JSON.stringify({ id: config.id, instance }), proxy: '', redirect: 'manual',
+        headers: { 'content-type': 'application/json', 'x-monoripper-cluster-token': token }, tls: { ca: controllerCa }, signal: AbortSignal.timeout(2000) })
+        .then(response => response.body?.cancel(), () => { /* the controller is down; heartbeat expiry covers it */ })
       server.stop(false).catch(() => {})
       await server.stop(true)
       await services.stop(true)

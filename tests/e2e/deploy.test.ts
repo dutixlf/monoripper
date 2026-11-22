@@ -160,7 +160,7 @@ test('a crash between the switch and its persistence recovers from the durable o
     client.close()
     const state = JSON.parse(await readFile(join(data, 'state.json'), 'utf8'))
     expect(state.operations[0]).toMatchObject({ id: accepted.id, phase: 'applying', step: 'switching' })
-    expect(state.serving.api).toBeUndefined()
+    expect(state.serving.api).toBe(releases.v1) // The switch to v2 was never persisted.
     expect(state.releases.api).toBe(releases.v2)
     server = await launch(config)
     client = await connectControl({ address: server.info.controlAddress, token: secrets.control, project: 'shop' })

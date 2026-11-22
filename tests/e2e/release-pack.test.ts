@@ -79,7 +79,7 @@ test('pack builds a deterministic, self-contained release that runs without the 
     const info = await fetch(new URL('/api/info', runtime.url)).then(response => response.json())
     expect(info).toMatchObject({ formatted: '.......x', asset: 'hello from an asset\n', clock: 'clock-ok', secret, client: true })
     expect(info.cwd).toStartWith(join(elsewhere, '.monoripper/packed/development/work'))
-    expect(runtime.getStatus().contexts.map(context => [context.name, context.release, context.servingRelease])).toEqual([['api', first.digest, undefined], ['jobs', first.digest, undefined]])
+    expect(runtime.getStatus().contexts.map(context => [context.name, context.release, context.servingRelease])).toEqual([['api', first.digest, first.digest], ['jobs', first.digest, first.digest]])
     expect(runtime.status().every(worker => worker.release === first.digest)).toBe(true)
   } finally {
     await runtime?.stop()
